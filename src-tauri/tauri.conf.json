@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ClipGen Studio",
+  "version": "0.1.0",
+  "identifier": "com.clipgen.studio",
+  "build": {
+    "beforeBuildCommand": "npm.cmd run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "ClipGen Studio — YouTube Downloader & Multi-Clip Editor",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "resizable": true,
+        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "publisher": "Javier Medina",
+    "copyright": "Copyright © 2026 Javier Medina. Todos los derechos reservados.",
+    "shortDescription": "Descargador y editor multi-clip de YouTube por Javier Medina",
+    "longDescription": "ClipGen Studio — Estudio moderno en Rust para descarga y edición multi-clip de YouTube con vista previa en vivo. Autor: Javier Medina.",
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "languages": [
+          "Spanish",
+          "English"
+        ],
+        "displayLanguageSelector": true
+      }
+    }
+  }
+}
