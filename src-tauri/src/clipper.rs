@@ -2375,6 +2375,16 @@ async fn fallback_ytdlp_cut_clip(
     }
 }
 
+fn clean_clip_title_prefix(name: &str) -> String {
+    let re = regex::Regex::new(r"^(?i:(?:clip\s*#?\d+\s*[-:.]\s*|\d+[\.\-_)\s]+\s*))").unwrap();
+    let cleaned = re.replace(name.trim(), "").trim().to_string();
+    if cleaned.is_empty() {
+        "Clip".to_string()
+    } else {
+        cleaned
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn process_video_clip_group(
     app: &AppHandle,
@@ -2469,8 +2479,11 @@ async fn process_video_clip_group(
         .map(|c| (c.end_time - c.start_time).max(0.1))
         .sum();
 
+    let clip_start_offset = request.options.clip_start_index.unwrap_or(1);
+    let grand_max_number = grand_total_clips + clip_start_offset.saturating_sub(1);
+
     for (idx, clip) in request.clips.iter().enumerate() {
-        let global_idx = global_clip_offset + idx + 1;
+        let global_idx = global_clip_offset + idx + clip_start_offset;
         if is_job_cancelled(job_id) {
             let _ = fs::remove_dir_all(&session_tmp);
             return Err((true, "__CANCELLED__".to_string()));
@@ -2479,11 +2492,12 @@ async fn process_video_clip_group(
         let start_str = format_timestamp(clip.start_time);
         let end_str = format_timestamp(clip.end_time);
         let clip_dur = (clip.end_time - clip.start_time).max(0.1);
-        let safe_clip_name = sanitize_filename(&clip.name);
+        let clean_clip_title = clean_clip_title_prefix(&clip.name);
+        let safe_clip_name = sanitize_filename(&clean_clip_title);
         let display_clip_name = if is_multi_video {
-            format!("{} — {}", request.video_title, clip.name)
+            format!("{} — {}", request.video_title, clean_clip_title)
         } else {
-            clip.name.clone()
+            clean_clip_title.clone()
         };
         let step_msg = if is_multi_video {
             format!(
@@ -2493,8 +2507,8 @@ async fn process_video_clip_group(
         } else {
             format!(
                 "Clip {}/{}: \"{}\" ({} → {})",
-                idx + 1,
-                total,
+                idx + clip_start_offset,
+                total + clip_start_offset - 1,
                 clip.name,
                 start_str,
                 end_str
@@ -2522,7 +2536,24 @@ async fn process_video_clip_group(
             },
         );
 
-        let file_stem = format!("{safe_video_title} - {:02}_{safe_clip_name}", idx + 1);
+        let is_clean_format = request
+            .options
+            .filename_format
+            .as_deref()
+            .unwrap_or("clean") != "full";
+        let file_stem = if is_clean_format {
+            if grand_max_number >= 10 {
+                format!("{:02}. {safe_clip_name}", global_idx)
+            } else {
+                format!("{}. {safe_clip_name}", global_idx)
+            }
+        } else {
+            if grand_max_number >= 10 {
+                format!("{safe_video_title} - {:02}. {safe_clip_name}", global_idx)
+            } else {
+                format!("{safe_video_title} - {}. {safe_clip_name}", global_idx)
+            }
+        };
         let clip_res: Result<Vec<String>, (bool, String)> = if let Some(ref dash) = dash_selection {
             let first_attempt = download_and_cut_dash_clip(
                 ProgressSink::App(app),
@@ -2976,6 +3007,7 @@ fn clean_windows_path(path: &Path) -> String {
 #[tauri::command]
 pub fn open_output_folder(path: String) -> Result<(), String> {
     let raw_target = PathBuf::from(path.trim());
+    let _ = fs::create_dir_all(&raw_target);
     let target = if raw_target.exists() {
         raw_target
     } else if let Some(parent) = raw_target.parent().filter(|p| p.exists()) {
@@ -3030,58 +3062,23 @@ pub fn open_output_folder(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn pick_download_folder(initial_dir: Option<String>) -> Result<Option<String>, String> {
-    #[cfg(target_os = "windows")]
-    {
-        let ps_script = r#"
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.Application]::EnableVisualStyles()
-$f = New-Object System.Windows.Forms.Form
-$f.TopMost = $true
-$f.StartPosition = 'CenterScreen'
-$d = New-Object System.Windows.Forms.FolderBrowserDialog
-$d.Description = 'Selecciona la carpeta para guardar tus clips y descargas'
-$d.ShowNewFolderButton = $true
-if ($env:CLIPGEN_INIT_DIR -and (Test-Path -LiteralPath $env:CLIPGEN_INIT_DIR)) {
-    $d.SelectedPath = $env:CLIPGEN_INIT_DIR
-}
-if ($d.ShowDialog($f) -eq [System.Windows.Forms.DialogResult]::OK) {
-    Write-Output $d.SelectedPath
-}
-$f.Dispose()
-"#;
+    let mut dialog = rfd::AsyncFileDialog::new()
+        .set_title("Selecciona la carpeta para guardar tus clips y descargas");
 
-        let mut cmd = hidden_tokio_command(Path::new("powershell.exe"));
-        cmd.args(["-NoProfile", "-STA", "-Command", ps_script]);
-        if let Some(dir) = initial_dir.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-            cmd.env("CLIPGEN_INIT_DIR", dir.replace('/', "\\"));
+    if let Some(dir) = initial_dir.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let p = Path::new(dir);
+        if p.exists() {
+            dialog = dialog.set_directory(p);
         }
-
-        let output = cmd
-            .output()
-            .await
-            .map_err(|e| format!("No se pudo abrir el selector de carpetas: {e}"))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Error en el selector de carpetas: {}", stderr.trim()));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let chosen = stdout.trim().trim_start_matches('\u{feff}').to_string();
-        if chosen.is_empty() {
-            return Ok(None);
-        }
-
-        fs::create_dir_all(&chosen)
-            .map_err(|e| format!("No se pudo acceder a la carpeta elegida: {e}"))?;
-        Ok(Some(chosen))
     }
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = initial_dir;
-        Err("El selector nativo solo está implementado en Windows.".to_string())
+    let folder = dialog.pick_folder().await;
+    if let Some(f) = folder {
+        let path = f.path().to_string_lossy().to_string();
+        let _ = fs::create_dir_all(&path);
+        Ok(Some(path))
+    } else {
+        Ok(None)
     }
 }
 
@@ -3109,6 +3106,8 @@ mod tests {
             custom_args: None,
             target_fps: None,
             output_dir: "C:/Downloads/ClipGen".to_string(),
+            filename_format: None,
+            clip_start_index: None,
         }
     }
 
@@ -3238,6 +3237,8 @@ mod tests {
             precise_cut: true,
             merge_clips: false,
             options: sample_options(),
+            notes: None,
+            selected: Some(false),
         }];
 
         save_persistent_clips_to_path(&file, &entries).unwrap();
@@ -3298,12 +3299,16 @@ mod tests {
             name: "plip plop plip plop".to_string(),
             start_time: 2103.725, // 00:35:03.725
             end_time: 2230.027,   // 00:37:10.027
+            notes: None,
+            selected: Some(false),
         };
         let clip2 = ClipSegment {
             id: "c2".to_string(),
             name: "boss cosmico Fracasos Vivientes".to_string(),
             start_time: 2261.850, // 00:37:41.850
             end_time: 2746.450,   // 00:45:46.450
+            notes: None,
+            selected: Some(false),
         };
         let req = ClipExportRequest {
             url: url.to_string(),
@@ -3455,6 +3460,8 @@ mod tests {
             name: "perro de bolivia".to_string(),
             start_time: 1838.05,
             end_time: 1866.6534,
+            notes: None,
+            selected: Some(false),
         };
         let req = ClipExportRequest {
             url: url.to_string(),

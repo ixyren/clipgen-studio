@@ -61,6 +61,14 @@ pub struct VideoChapter {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreviewResolutionEntry {
+    pub label: String,
+    pub height: u32,
+    pub mp4_url: Option<String>,
+    pub webm_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoMetadata {
     pub id: String,
     pub title: String,
@@ -74,6 +82,8 @@ pub struct VideoMetadata {
     pub preview_combined_url: Option<String>,
     pub preview_webm_url: Option<String>,
     pub preview_audio_url: Option<String>,
+    #[serde(default)]
+    pub preview_resolutions: Vec<PreviewResolutionEntry>,
     pub embed_url: String,
     pub audio_tracks: Vec<AudioTrackOption>,
     pub formats: Vec<VideoFormatOption>,
@@ -87,6 +97,10 @@ pub struct ClipSegment {
     pub name: String,
     pub start_time: f64,
     pub end_time: f64,
+    #[serde(default)]
+    pub selected: Option<bool>,
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +109,10 @@ pub struct SavedClipEntry {
     pub name: String,
     pub start_time: f64,
     pub end_time: f64,
+    #[serde(default)]
+    pub selected: Option<bool>,
+    #[serde(default)]
+    pub notes: Option<String>,
     pub video_url: String,
     pub video_id: String,
     pub video_title: String,
@@ -129,6 +147,44 @@ pub struct ManualDownloadOptions {
     #[serde(default)]
     pub target_fps: Option<u32>,
     pub output_dir: String,
+    #[serde(default)]
+    pub filename_format: Option<String>, // "clean" | "full"
+    #[serde(default)]
+    pub clip_start_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionSegment {
+    pub start: i64,
+    pub end: i64,
+    pub is_peak: bool,
+    #[serde(default)]
+    pub emotion: Option<String>,
+    #[serde(default)]
+    pub events: Vec<String>,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionResult {
+    pub url: String,
+    #[serde(default)]
+    pub video_title: Option<String>,
+    pub duration: f64,
+    pub device: String,
+    pub segments: Vec<TranscriptionSegment>,
+    pub formatted_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionProgressEvent {
+    pub stage: String,
+    pub percent: f64,
+    pub message: String,
+    #[serde(default)]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub log_line: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

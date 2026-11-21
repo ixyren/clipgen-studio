@@ -10,12 +10,14 @@
   "app": {
     "windows": [
       {
-        "title": "ClipGen Studio — YouTube Downloader & Multi-Clip Editor",
-        "width": 1400,
+        "label": "main",
+        "title": "ClipGen Studio",
+        "width": 1440,
         "height": 900,
-        "minWidth": 1024,
-        "minHeight": 700,
+        "minWidth": 1100,
+        "minHeight": 720,
         "resizable": true,
+        "decorations": false,
         "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required"
       }
     ],

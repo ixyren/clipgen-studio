@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "clipgen-memorybank": {
+      "command": "node",
+      "args": [
+        "C:/Users/Javier/.gemini/antigravity/worktrees/Clip Gen/clipgen_ui_redesign/.agents/plugins/clipgen-memorybank/mcp-server.cjs"
+      ],
+      "env": {
+        "MEMORYBANK_DIR": "C:/Users/Javier/.gemini/antigravity/worktrees/Clip Gen/clipgen_ui_redesign/.memorybank",
+        "MEMORYBANK_DEFAULT_NAMESPACE": "clipgen-studio"
+      }
+    }
+  }
+}

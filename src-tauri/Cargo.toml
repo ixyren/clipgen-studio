@@ -24,3 +24,4 @@ dirs = "5.0"
 uuid = { version = "1", features = ["v4"] }
 regex = "1"
 anyhow = "1"
+rfd = "0.15"

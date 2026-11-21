@@ -53,6 +53,13 @@ export interface VideoChapter {
   end_time: number;
 }
 
+export interface PreviewResolutionOption {
+  label: string;
+  height: number;
+  mp4_url?: string | null;
+  webm_url?: string | null;
+}
+
 export interface VideoMetadata {
   id: string;
   title: string;
@@ -66,6 +73,7 @@ export interface VideoMetadata {
   preview_combined_url: string | null;
   preview_webm_url: string | null;
   preview_audio_url: string | null;
+  preview_resolutions?: PreviewResolutionOption[];
   embed_url: string;
   audio_tracks: AudioTrackOption[];
   formats: VideoFormatOption[];
@@ -78,6 +86,8 @@ export interface ClipSegment {
   name: string;
   start_time: number;
   end_time: number;
+  selected?: boolean;
+  notes?: string;
 }
 
 export interface SavedClipEntry {
@@ -85,6 +95,8 @@ export interface SavedClipEntry {
   name: string;
   start_time: number;
   end_time: number;
+  selected?: boolean;
+  notes?: string;
   video_url: string;
   video_id: string;
   video_title: string;
@@ -113,6 +125,8 @@ export interface ManualDownloadOptions {
   custom_args: string | null;
   target_fps: number | null;
   output_dir: string;
+  filename_format?: "clean" | "full";
+  clip_start_index?: number;
 }
 
 export interface ClipExportRequest {

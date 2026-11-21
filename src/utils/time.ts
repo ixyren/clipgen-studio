@@ -48,6 +48,16 @@ export function parseTimecode(raw: string): number | null {
   return nums[0] * 3600 + nums[1] * 60 + nums[2];
 }
 
+export function parseFlexibleTimestamp(val: unknown): number | null {
+  if (typeof val === "number") {
+    return Number.isFinite(val) && val >= 0 ? val : null;
+  }
+  if (typeof val === "string") {
+    return parseTimecode(val);
+  }
+  return null;
+}
+
 export function formatBytes(bytes: number | null | undefined): string {
   if (!bytes || bytes <= 0) return "—";
   const units = ["B", "KB", "MB", "GB"];
@@ -65,4 +75,12 @@ export function formatViews(views: number | null | undefined): string {
   if (views >= 1_000_000) return `${(views / 1_000_000).toFixed(1)}M vistas`;
   if (views >= 1_000) return `${(views / 1_000).toFixed(1)}K vistas`;
   return `${views} vistas`;
+}
+
+export function cleanClipTitle(name: string): string {
+  if (!name) return "Clip";
+  const cleaned = name
+    .replace(/^(?:clip\s*#?\d+\s*[-:.]\s*|\d+[\.\-_)\s]+\s*)/i, "")
+    .trim();
+  return cleaned || "Clip";
 }

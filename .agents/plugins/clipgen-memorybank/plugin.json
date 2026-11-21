@@ -1,0 +1,12 @@
+{
+  "name": "clipgen-memorybank",
+  "displayName": "ClipGen MemoryBank",
+  "version": "1.0.0",
+  "description": "Persistent cross-session project memory map for ClipGen Studio powered by ura-tools/memorybank (MCP + CLI).",
+  "repository": "https://github.com/ura-tools/memorybank",
+  "suggestedPrompts": [
+    "Recall the full architecture of ClipGen Studio from memorybank",
+    "Search memorybank for timeline, playback, or transcription details",
+    "Store a new project decision or preference in memorybank"
+  ]
+}

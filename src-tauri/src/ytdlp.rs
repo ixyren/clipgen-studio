@@ -266,7 +266,10 @@ fn dash_hls_registry() -> &'static RwLock<HashMap<String, DashHlsEntry>> {
 fn proxy_http_client() -> &'static reqwest::Client {
     PROXY_HTTP_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
-            .timeout(Duration::from_secs(300))
+            .connect_timeout(Duration::from_secs(10))
+            .pool_idle_timeout(Duration::from_secs(20))
+            .tcp_keepalive(Duration::from_secs(15))
+            .timeout(Duration::from_secs(90))
             .build()
             .expect("Failed to build proxy reqwest client")
     })
@@ -1180,6 +1183,8 @@ async fn handle_proxy_connection(mut socket: TcpStream) {
         final_end = req_end.map(|e| e.min(total - 1)).unwrap_or(total - 1);
     }
 
+    let mut consecutive_failures: u32 = 0;
+
     while cur <= final_end {
         let chunk_idx = cur / MAX_PROXY_CHUNK;
         let chunk_start = chunk_idx * MAX_PROXY_CHUNK;
@@ -1218,20 +1223,29 @@ async fn handle_proxy_connection(mut socket: TcpStream) {
             {
                 return;
             }
+            consecutive_failures = 0;
             cur += to_send as u64;
             continue;
         }
 
         let chunk_limit = (chunk_start + MAX_PROXY_CHUNK - 1).min(final_end);
-        let resp = match client
-            .get(&entry.url)
-            .header("User-Agent", &entry.user_agent)
-            .header("Range", format!("bytes={cur}-{chunk_limit}"))
-            .send()
-            .await
+        let resp = match tokio::time::timeout(
+            Duration::from_secs(12),
+            client
+                .get(&entry.url)
+                .header("User-Agent", &entry.user_agent)
+                .header("Range", format!("bytes={cur}-{chunk_limit}"))
+                .send(),
+        )
+        .await
         {
-            Ok(r) => r,
-            Err(_) => {
+            Ok(Ok(r)) => r,
+            Ok(Err(_)) | Err(_) => {
+                consecutive_failures += 1;
+                if consecutive_failures <= 3 {
+                    tokio::time::sleep(Duration::from_millis(150 * u64::from(consecutive_failures))).await;
+                    continue;
+                }
                 if !header_sent {
                     write_simple_http_error(&mut socket, 502, "Bad Gateway").await;
                 }
@@ -1240,6 +1254,25 @@ async fn handle_proxy_connection(mut socket: TcpStream) {
         };
 
         let status = resp.status();
+        if !status.is_success() {
+            if status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                consecutive_failures += 1;
+                if consecutive_failures <= 3 {
+                    tokio::time::sleep(Duration::from_millis(150 * u64::from(consecutive_failures))).await;
+                    continue;
+                }
+            }
+            if !header_sent {
+                write_simple_http_error(
+                    &mut socket,
+                    status.as_u16(),
+                    status.canonical_reason().unwrap_or("Upstream Error"),
+                )
+                .await;
+            }
+            return;
+        }
+
         content_type_out = extract_content_type(&resp, &entry.content_type);
 
         if total_opt.is_none() {
@@ -1251,17 +1284,15 @@ async fn handle_proxy_connection(mut socket: TcpStream) {
                 .and_then(|s| s.trim().parse::<u64>().ok());
 
             if let Some(t) = discovered_total {
-                if status.is_success() {
-                    let _ = entry.total_size.set(t);
-                    if t == 0 || req_start >= t {
-                        if !header_sent {
-                            write_simple_http_error(&mut socket, 416, "Range Not Satisfiable").await;
-                        }
-                        return;
+                let _ = entry.total_size.set(t);
+                if t == 0 || req_start >= t {
+                    if !header_sent {
+                        write_simple_http_error(&mut socket, 416, "Range Not Satisfiable").await;
                     }
-                    total_opt = Some(t);
-                    final_end = req_end.map(|e| e.min(t - 1)).unwrap_or(t - 1);
+                    return;
                 }
+                total_opt = Some(t);
+                final_end = req_end.map(|e| e.min(t - 1)).unwrap_or(t - 1);
             }
         }
 
@@ -1272,18 +1303,6 @@ async fn handle_proxy_connection(mut socket: TcpStream) {
             }
             return;
         };
-
-        if !status.is_success() {
-            if !header_sent {
-                write_simple_http_error(
-                    &mut socket,
-                    status.as_u16(),
-                    status.canonical_reason().unwrap_or("Upstream Error"),
-                )
-                .await;
-            }
-            return;
-        }
 
         if !header_sent {
             let overall_len = final_end - req_start + 1;
@@ -1311,7 +1330,17 @@ async fn handle_proxy_connection(mut socket: TcpStream) {
 
         let mut stream = resp.bytes_stream();
         let mut stream_err = false;
-        while let Some(chunk_res) = stream.next().await {
+        loop {
+            let next_item = match tokio::time::timeout(Duration::from_secs(12), stream.next()).await {
+                Ok(item) => item,
+                Err(_) => {
+                    stream_err = true;
+                    break;
+                }
+            };
+            let Some(chunk_res) = next_item else {
+                break;
+            };
             match chunk_res {
                 Ok(chunk) => {
                     if chunk.is_empty() {
@@ -1329,6 +1358,7 @@ async fn handle_proxy_connection(mut socket: TcpStream) {
                         chunk_buf.extend_from_slice(&chunk[..to_send]);
                     }
                     cur += to_send as u64;
+                    consecutive_failures = 0;
                 }
                 Err(_) => {
                     stream_err = true;
@@ -1344,9 +1374,22 @@ async fn handle_proxy_connection(mut socket: TcpStream) {
             }
         }
 
-        if stream_err || cur == before {
+        if stream_err {
+            if cur > before {
+                consecutive_failures = 1;
+            } else {
+                consecutive_failures += 1;
+            }
+            if consecutive_failures <= 3 {
+                tokio::time::sleep(Duration::from_millis(150 * u64::from(consecutive_failures))).await;
+                continue;
+            }
             break;
         }
+        if cur == before {
+            break;
+        }
+        consecutive_failures = 0;
     }
 }
 
@@ -1560,13 +1603,17 @@ async fn fetch_and_cache_chunk(entry: &StreamEntry, chunk_idx: u64) -> Option<(A
         None => chunk_start + MAX_PROXY_CHUNK - 1,
     };
 
-    let resp = proxy_http_client()
-        .get(&entry.url)
-        .header("User-Agent", &entry.user_agent)
-        .header("Range", format!("bytes={chunk_start}-{chunk_end}"))
-        .send()
-        .await
-        .ok()?;
+    let resp = tokio::time::timeout(
+        Duration::from_secs(10),
+        proxy_http_client()
+            .get(&entry.url)
+            .header("User-Agent", &entry.user_agent)
+            .header("Range", format!("bytes={chunk_start}-{chunk_end}"))
+            .send(),
+    )
+    .await
+    .ok()?
+    .ok()?;
 
     let status = resp.status();
     if !status.is_success() {
@@ -1585,14 +1632,22 @@ async fn fetch_and_cache_chunk(entry: &StreamEntry, chunk_idx: u64) -> Option<(A
             return None;
         }
         let expected_len = (total - chunk_start).min(MAX_PROXY_CHUNK) as usize;
-        let bytes = resp.bytes().await.ok()?.to_vec();
+        let bytes = tokio::time::timeout(Duration::from_secs(15), resp.bytes())
+            .await
+            .ok()?
+            .ok()?
+            .to_vec();
         if bytes.len() != expected_len || expected_len == 0 {
             return None;
         }
         let arc = cache_chunk(entry, chunk_idx, bytes).await;
         Some((arc, total))
     } else if chunk_start == 0 {
-        let bytes = resp.bytes().await.ok()?.to_vec();
+        let bytes = tokio::time::timeout(Duration::from_secs(15), resp.bytes())
+            .await
+            .ok()?
+            .ok()?
+            .to_vec();
         let total = bytes.len() as u64;
         if total == 0 || total > MAX_PROXY_CHUNK {
             return None;
@@ -2960,11 +3015,13 @@ pub async fn run_ytdlp_with_progress(cfg: YtdlpRunConfig<'_>) -> Result<Vec<Stri
     Ok(output_files)
 }
 
+#[derive(Clone)]
 struct StreamCandidate {
     score: u64,
     url: String,
     ua: String,
     content_type: String,
+    height: Option<u32>,
 }
 
 fn compute_preview_video_score(
@@ -3087,8 +3144,18 @@ pub fn classify_audio_track(
     (track_id, label, is_original, is_drc)
 }
 
+fn emit_video_load_progress(app: &AppHandle, percent: f64, message: &str) {
+    let _ = app.emit(
+        "video-load-progress",
+        serde_json::json!({
+            "percent": percent,
+            "message": message,
+        }),
+    );
+}
+
 #[tauri::command]
-pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
+pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetadata, String> {
     let trimmed_url = url.trim().to_string();
     if trimmed_url.is_empty() {
         return Err("Introduce una URL de video válida.".to_string());
@@ -3097,6 +3164,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
     PRECACHE_GENERATION.fetch_add(1, Ordering::SeqCst);
 
     let ytdlp = ensure_ytdlp_ready()?;
+    emit_video_load_progress(&app, 8.0, "Conectando con yt-dlp...");
     let output = hidden_tokio_command(&ytdlp)
         .args([
             "--dump-single-json",
@@ -3121,6 +3189,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
 
     let json: Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("Error leyendo metadatos JSON de yt-dlp: {e}"))?;
+    emit_video_load_progress(&app, 45.0, "Procesando formatos y capítulos...");
 
     let id = json["id"].as_str().unwrap_or("video").to_string();
     let title = json["title"].as_str().unwrap_or("Sin título").to_string();
@@ -3251,6 +3320,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
                         } else {
                             "video/mp4".to_string()
                         },
+                        height,
                     });
                 } else if has_video && !has_audio {
                     let score = compute_preview_video_score(
@@ -3262,6 +3332,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
                             url: stream_url.to_string(),
                             ua: stream_ua.clone(),
                             content_type: "video/mp4".to_string(),
+                            height,
                         });
                         let alt_short = match (width, height) {
                             (Some(w), Some(hh)) if w > 0 && hh > 0 => w.min(hh),
@@ -3276,6 +3347,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
                                 url: stream_url.to_string(),
                                 ua: stream_ua,
                                 content_type: "video/mp4".to_string(),
+                                height,
                             });
                         }
                     } else if ext == "webm" {
@@ -3284,6 +3356,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
                             url: stream_url.to_string(),
                             ua: stream_ua,
                             content_type: "video/webm".to_string(),
+                            height,
                         });
                     }
                 } else if has_audio && !has_video {
@@ -3294,6 +3367,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
                             url: stream_url.to_string(),
                             ua: stream_ua.clone(),
                             content_type: "audio/mp4".to_string(),
+                            height: None,
                         });
                     } else if ext == "webm" || ext == "opus" {
                         fallback_audio_cands.push(StreamCandidate {
@@ -3301,6 +3375,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
                             url: stream_url.to_string(),
                             ua: stream_ua.clone(),
                             content_type: "audio/webm".to_string(),
+                            height: None,
                         });
                     }
 
@@ -3364,6 +3439,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
                             url: stream_url.to_string(),
                             ua: stream_ua,
                             content_type: "application/vnd.apple.mpegurl".to_string(),
+                            height,
                         });
                     } else {
                         let score = compute_preview_video_score(
@@ -3374,6 +3450,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
                             url: stream_url.to_string(),
                             ua: stream_ua,
                             content_type: "application/vnd.apple.mpegurl".to_string(),
+                            height,
                         });
                     }
                 } else if has_video && has_audio {
@@ -3382,6 +3459,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
                         url: stream_url.to_string(),
                         ua: stream_ua,
                         content_type: "application/vnd.apple.mpegurl".to_string(),
+                        height,
                     });
                 } else if has_audio && !has_video {
                     let note_lower = format_note.to_lowercase();
@@ -3411,6 +3489,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
                         url: stream_url.to_string(),
                         ua: stream_ua,
                         content_type: "application/vnd.apple.mpegurl".to_string(),
+                        height: None,
                     });
                 }
             } else if is_dash_segments && (ext == "mp4" || ext == "m4a") {
@@ -3528,6 +3607,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
     });
 
     // Probe audio track candidates concurrently so multi-audio videos resolve quickly
+    emit_video_load_progress(&app, 58.0, "Verificando pistas de audio...");
     let probe_futures = sorted_audio_cands
         .iter()
         .map(|cand| probe_stream_ok(&cand.url, &cand.ua));
@@ -3585,6 +3665,10 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
         }
     }
 
+    let mp4_for_resolutions = video_mp4_cands.clone();
+    let webm_for_resolutions = video_webm_cands.clone();
+
+    emit_video_load_progress(&app, 70.0, "Preparando vista previa...");
     let (preview_combined_url, mut preview_stream_url, mut preview_webm_url, preview_alt_url) =
         tokio::join!(
             pick_and_register_stream(proxy_port, combined_cands, false),
@@ -3730,6 +3814,103 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
     }
     let subtitles: Vec<String> = sub_set.into_iter().collect();
 
+    let res_targets = [
+        ("360p", 360u32),
+        ("480p", 480u32),
+        ("720p", 720u32),
+        ("1080p", 1080u32),
+        ("Máxima", 9999u32),
+    ];
+
+    let mut preview_resolutions: Vec<crate::models::PreviewResolutionEntry> = Vec::new();
+
+    for (label, target_h) in res_targets {
+        let best_mp4 = mp4_for_resolutions
+            .iter()
+            .filter(|c| if target_h == 9999 { true } else { c.height.unwrap_or(0) <= target_h })
+            .max_by_key(|c| c.height.unwrap_or(0));
+
+        let best_webm = webm_for_resolutions
+            .iter()
+            .filter(|c| if target_h == 9999 { true } else { c.height.unwrap_or(0) <= target_h })
+            .max_by_key(|c| c.height.unwrap_or(0));
+
+        if best_mp4.is_none() && best_webm.is_none() {
+            continue;
+        }
+
+        let effective_h = best_mp4
+            .and_then(|c| c.height)
+            .or_else(|| best_webm.and_then(|c| c.height))
+            .unwrap_or(target_h);
+
+        let mp4_url = if let Some(cand) = best_mp4 {
+            Some(
+                register_proxy_stream(
+                    proxy_port,
+                    cand.url.clone(),
+                    cand.ua.clone(),
+                    cand.content_type.clone(),
+                    false,
+                )
+                .await,
+            )
+        } else {
+            None
+        };
+
+        let webm_url = if let Some(cand) = best_webm {
+            Some(
+                register_proxy_stream(
+                    proxy_port,
+                    cand.url.clone(),
+                    cand.ua.clone(),
+                    cand.content_type.clone(),
+                    false,
+                )
+                .await,
+            )
+        } else {
+            None
+        };
+
+        preview_resolutions.push(crate::models::PreviewResolutionEntry {
+            label: label.to_string(),
+            height: effective_h,
+            mp4_url,
+            webm_url,
+        });
+    }
+
+    // Default to 480p or 720p if available
+    if let Some(pref) = preview_resolutions
+        .iter()
+        .find(|r| r.label == "480p" && (r.mp4_url.is_some() || r.webm_url.is_some()))
+        .or_else(|| {
+            preview_resolutions
+                .iter()
+                .find(|r| r.label == "720p" && (r.mp4_url.is_some() || r.webm_url.is_some()))
+        })
+    {
+        if let Some(ref u) = pref.mp4_url {
+            preview_stream_url = Some(u.clone());
+        }
+        if let Some(ref u) = pref.webm_url {
+            preview_webm_url = Some(u.clone());
+        }
+    }
+
+    if preview_resolutions.is_empty() && (preview_stream_url.is_some() || preview_webm_url.is_some()) {
+        preview_resolutions.push(crate::models::PreviewResolutionEntry {
+            label: "Máxima".to_string(),
+            height: 1080,
+            mp4_url: preview_stream_url.clone(),
+            webm_url: preview_webm_url.clone(),
+        });
+    }
+
+    emit_video_load_progress(&app, 80.0, "Iniciando reproductor...");
+
     Ok(VideoMetadata {
         id,
         title,
@@ -3743,6 +3924,7 @@ pub async fn fetch_video_info(url: String) -> Result<VideoMetadata, String> {
         preview_combined_url,
         preview_webm_url,
         preview_audio_url,
+        preview_resolutions,
         embed_url,
         audio_tracks,
         formats,
@@ -4012,6 +4194,8 @@ mod tests {
             custom_args: None,
             target_fps: Some(30),
             output_dir: ".".to_string(),
+            filename_format: None,
+            clip_start_index: None,
         };
         let mut args = Vec::new();
         append_format_and_option_args(&mut args, &opts);
@@ -4044,6 +4228,8 @@ mod tests {
             custom_args: Some("--no-mtime".to_string()),
             target_fps: None,
             output_dir: ".".to_string(),
+            filename_format: None,
+            clip_start_index: None,
         };
         let mut args = Vec::new();
         append_format_and_option_args(&mut args, &opts);
@@ -4074,6 +4260,8 @@ mod tests {
             custom_args: None,
             target_fps: None,
             output_dir: ".".to_string(),
+            filename_format: None,
+            clip_start_index: None,
         };
         let mut args = Vec::new();
         append_format_and_option_args(&mut args, &opts);
@@ -4103,6 +4291,8 @@ mod tests {
             custom_args: None,
             target_fps: Some(24),
             output_dir: ".".to_string(),
+            filename_format: None,
+            clip_start_index: None,
         };
         let mut args = Vec::new();
         append_format_and_option_args(&mut args, &opts);
@@ -4386,6 +4576,8 @@ mod tests {
             custom_args: None,
             target_fps: None,
             output_dir: ".".to_string(),
+            filename_format: None,
+            clip_start_index: None,
         };
 
         let mut full_args = Vec::new();

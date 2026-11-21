@@ -1,0 +1,138 @@
+{
+  "memories": {
+    "ae338d2fbd0c": {
+      "id": "ae338d2fbd0c",
+      "name": "architecture-overview",
+      "type": "project",
+      "description": "High-level tech stack, directory structure, entry chain, and runtime architecture of ClipGen Studio.",
+      "tags": [
+        "architecture",
+        "stack",
+        "overview"
+      ],
+      "created": "2026-11-21T19:47:57.017Z",
+      "updated": "2026-11-21T19:49:04.702Z"
+    },
+    "118d52f4df63": {
+      "id": "118d52f4df63",
+      "name": "frontend-components-map",
+      "type": "project",
+      "description": "Complete map of active frontend files, utils, DTO types, and unused legacy components to ignore.",
+      "tags": [
+        "frontend",
+        "react",
+        "components"
+      ],
+      "created": "2026-11-21T19:47:57.019Z",
+      "updated": "2026-11-21T20:32:19.017Z"
+    },
+    "1864a1940160": {
+      "id": "1864a1940160",
+      "name": "backend-rust-commands-map",
+      "type": "project",
+      "description": "Every Rust module, registered Tauri #[tauri::command], emitted events, and shared structs in src-tauri/src/.",
+      "tags": [
+        "backend",
+        "rust",
+        "tauri",
+        "commands"
+      ],
+      "created": "2026-11-21T19:47:57.020Z",
+      "updated": "2026-11-21T19:49:04.706Z"
+    },
+    "ef1c4a5777ab": {
+      "id": "ef1c4a5777ab",
+      "name": "timeline-and-player-engine",
+      "type": "project",
+      "description": "3-zone NLE timeline (línea de tiempo y cabezales), window drag tracking, playback speed sync across quality switches, stall watchdog, and proxy retries.",
+      "tags": [
+        "timeline",
+        "linea-de-tiempo",
+        "visor",
+        "hls",
+        "proxy",
+        "playback",
+        "velocidad"
+      ],
+      "created": "2026-11-21T19:47:57.021Z",
+      "updated": "2026-11-21T20:28:14.642Z"
+    },
+    "2c35c545e167": {
+      "id": "2c35c545e167",
+      "name": "transcription-and-emotion-pipeline",
+      "type": "project",
+      "description": "Transcripción de audio y emociones: URL resolution, fast-path audio extraction, Python Whisper+ONNX emotion/reaction pipeline, .txt save and --clipgen copy.",
+      "tags": [
+        "transcription",
+        "transcripcion",
+        "whisper",
+        "emotions",
+        "emociones",
+        "python"
+      ],
+      "created": "2026-11-21T19:47:57.022Z",
+      "updated": "2026-11-21T19:49:04.708Z"
+    },
+    "0f17e39ad0b0": {
+      "id": "0f17e39ad0b0",
+      "name": "clip-queue-numbering-and-export",
+      "type": "project",
+      "description": "Cola de clips y numeración ordinal: custom insertion #, global queue visibility, margins, export resolution presets, and saved_clips.json.",
+      "tags": [
+        "clips",
+        "queue",
+        "cola",
+        "numbering",
+        "numeracion",
+        "export"
+      ],
+      "created": "2026-11-21T19:47:57.023Z",
+      "updated": "2026-11-21T19:49:04.709Z"
+    },
+    "dc19cfdb20ef": {
+      "id": "dc19cfdb20ef",
+      "name": "windows-tauri-gotchas-and-preferences",
+      "type": "feedback",
+      "description": "Platform-specific Windows/WebView2/Tauri constraints and user workflow preferences verified in ClipGen Studio.",
+      "tags": [
+        "windows",
+        "tauri",
+        "gotchas",
+        "preferences"
+      ],
+      "created": "2026-11-21T19:47:57.024Z",
+      "updated": "2026-11-21T19:49:04.710Z"
+    },
+    "248d43f75abe": {
+      "id": "248d43f75abe",
+      "name": "build-test-packaging-commands",
+      "type": "reference",
+      "description": "Verified build, unit test, Tauri installer output paths, and MemoryBank CLI commands.",
+      "tags": [
+        "build",
+        "test",
+        "cli",
+        "packaging"
+      ],
+      "created": "2026-11-21T19:47:57.025Z",
+      "updated": "2026-11-21T19:49:04.711Z"
+    },
+    "8770b882ed7a": {
+      "id": "8770b882ed7a",
+      "name": "drag-scrub-lowres-and-transcription-safe-mode",
+      "type": "project",
+      "description": "",
+      "tags": [],
+      "created": "2026-11-21T21:27:16.843Z",
+      "updated": "2026-11-21T21:27:16.844Z"
+    }
+  },
+  "stats": {
+    "total": 9,
+    "byType": {
+      "project": 7,
+      "feedback": 1,
+      "reference": 1
+    }
+  }
+}
