@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Crosshair,
   Pin,
+  Sliders,
 } from "lucide-react";
 import type { SavedClipEntry, VideoMetadata } from "../types";
 import { formatTimeShort, formatTimecode, cleanClipTitle } from "../utils/time";
@@ -366,33 +367,9 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
   const hasAudioTrackRef = useRef(hasAudioTrack);
   hasAudioTrackRef.current = hasAudioTrack;
 
-  // Dedicated low-resolution stream (prefer 480p -> 360p -> lowest) for fast mini-tooltip scrubbing
-  const scrubStreamChoice = useMemo(() => {
-    if (!metadata || playerMode === "embed") {
-      return { url: null as string | null, label: "" };
-    }
-    const list = metadata.preview_resolutions || [];
-    const pickUrl = (r?: { mp4_url?: string | null; webm_url?: string | null }) =>
-      playerMode === "webm"
-        ? r?.webm_url || r?.mp4_url || null
-        : r?.mp4_url || r?.webm_url || null;
-
-    const r480 = list.find((r) => r.label === "480p" && pickUrl(r));
-    if (r480) return { url: pickUrl(r480), label: "480p" };
-
-    const r360 = list.find((r) => r.label === "360p" && pickUrl(r));
-    if (r360) return { url: pickUrl(r360), label: "360p" };
-
-    const lowest = [...list]
-      .filter((r) => Boolean(pickUrl(r)))
-      .sort((a, b) => a.height - b.height)[0];
-    if (lowest) return { url: pickUrl(lowest), label: lowest.label };
-
-    const fallback = metadata.preview_stream_url || metadata.preview_webm_url || null;
-    return { url: fallback, label: fallback ? "SD" : "" };
-  }, [metadata, playerMode]);
-  const scrubStreamUrl = scrubStreamChoice.url;
-  const scrubResLabel = scrubStreamChoice.label;
+  // Use the exact same stream as the viewport to reuse already loaded/buffered chunks!
+  const scrubStreamUrl = activeStreamUrl;
+  const scrubResLabel = selectedResolution;
 
   const syncMediaSettings = useCallback(() => {
     const rate = playbackRateRef.current;
@@ -3380,6 +3357,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
             disabled={!metadata}
             onChange={(e) => handleRateChange(parseFloat(e.target.value))}
             className="h-8 rounded-lg border border-white/10 bg-[#09090B] px-1.5 font-mono text-[11px] text-slate-300 outline-none hover:border-white/20 disabled:opacity-40"
+            title="Velocidad de reproducción"
           >
             <option value={0.5}>0.5x</option>
             <option value={1}>1.0x</option>
@@ -3387,6 +3365,32 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
             <option value={1.5}>1.5x</option>
             <option value={2}>2.0x</option>
           </select>
+
+          {/* Calidad de Reproducción en Barra Principal */}
+          {metadata && metadata.preview_resolutions && metadata.preview_resolutions.length > 0 && (
+            <div
+              className="flex items-center gap-1 rounded-lg border border-white/10 bg-[#09090B] px-2 h-8"
+              title="Calidad de reproducción del visor"
+            >
+              <Sliders className="h-3 w-3 text-indigo-400 shrink-0" />
+              <select
+                value={selectedResolution}
+                onChange={(e) => {
+                  if (playerMode === "embed") {
+                    setPlayerMode("mp4");
+                  }
+                  handleResolutionChange(e.target.value);
+                }}
+                className="bg-transparent font-mono text-[11px] font-semibold text-indigo-300 outline-none cursor-pointer"
+              >
+                {metadata.preview_resolutions.map((res) => (
+                  <option key={res.label} value={res.label} className="bg-[#121218] text-white">
+                    {res.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Right: In / Out Marking buttons & Add Clip */}

@@ -143,15 +143,24 @@
       "tags": [],
       "created": "2026-11-22T03:02:55.370Z",
       "updated": "2026-11-22T03:02:55.370Z"
+    },
+    "d55590932d09": {
+      "id": "d55590932d09",
+      "name": "mini-tooltip-shares-viewport-stream",
+      "type": "custom",
+      "description": "",
+      "tags": [],
+      "created": "2026-11-22T03:17:52.743Z",
+      "updated": "2026-11-22T03:17:52.744Z"
     }
   },
   "stats": {
-    "total": 11,
+    "total": 12,
     "byType": {
       "project": 7,
       "feedback": 2,
       "reference": 1,
-      "custom": 1
+      "custom": 2
     }
   }
 }
