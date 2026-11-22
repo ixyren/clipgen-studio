@@ -152,15 +152,24 @@
       "tags": [],
       "created": "2026-11-22T03:17:52.743Z",
       "updated": "2026-11-22T03:17:52.744Z"
+    },
+    "cb2e9c408b2f": {
+      "id": "cb2e9c408b2f",
+      "name": "resolution-selector-max-quality",
+      "type": "custom",
+      "description": "",
+      "tags": [],
+      "created": "2026-11-22T03:41:51.483Z",
+      "updated": "2026-11-22T03:41:51.483Z"
     }
   },
   "stats": {
-    "total": 12,
+    "total": 13,
     "byType": {
       "project": 7,
       "feedback": 2,
       "reference": 1,
-      "custom": 2
+      "custom": 3
     }
   }
 }

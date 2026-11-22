@@ -146,7 +146,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
   const minimapRef = useRef<HTMLDivElement | null>(null);
 
   const [playerMode, setPlayerMode] = useState<PlayerSourceMode>("mp4");
-  const [selectedResolution, setSelectedResolution] = useState<string>("480p");
+  const [selectedResolution, setSelectedResolution] = useState<string>("Máxima");
   const [reloadNonce, setReloadNonce] = useState(0);
   const [streamError, setStreamError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -328,17 +328,9 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
     }
 
     if (metadata.preview_resolutions && metadata.preview_resolutions.length > 0) {
-      const has480 = metadata.preview_resolutions.some((r) => r.label === "480p");
-      const has720 = metadata.preview_resolutions.some((r) => r.label === "720p");
-      if (has480) {
-        setSelectedResolution("480p");
-      } else if (has720) {
-        setSelectedResolution("720p");
-      } else {
-        setSelectedResolution(metadata.preview_resolutions[0].label);
-      }
+      setSelectedResolution(metadata.preview_resolutions[0].label);
     } else {
-      setSelectedResolution("480p");
+      setSelectedResolution("Máxima");
     }
 
     setStreamError(false);

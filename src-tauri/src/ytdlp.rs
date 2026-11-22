@@ -3847,7 +3847,6 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
         }
     }
 
-    let mut preview_resolutions: Vec<crate::models::PreviewResolutionEntry> = Vec::new();
     let standard_targets: &[u32] = &[360, 480, 720, 1080, 1440, 2160];
     let mut selected_heights: BTreeSet<u32> = BTreeSet::new();
 
@@ -3868,15 +3867,18 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
         selected_heights.insert(max_h);
     }
 
-    for h in &selected_heights {
-        let label = format!("{h}p");
+    let mut preview_resolutions: Vec<crate::models::PreviewResolutionEntry> = Vec::new();
+    let max_height = selected_heights.iter().next_back().copied().unwrap_or(1080);
+    let descending_heights: Vec<u32> = selected_heights.into_iter().rev().collect();
+
+    for h in descending_heights {
         let best_mp4 = mp4_for_resolutions
             .iter()
-            .filter(|c| c.height == Some(*h))
+            .filter(|c| c.height == Some(h))
             .max_by_key(|c| c.score);
         let best_webm = webm_for_resolutions
             .iter()
-            .filter(|c| c.height == Some(*h))
+            .filter(|c| c.height == Some(h))
             .max_by_key(|c| c.score);
 
         if best_mp4.is_none() && best_webm.is_none() {
@@ -3919,50 +3921,26 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
             webm_url = mp4_url.clone();
         }
 
+        let label = if h == max_height {
+            format!("{h}p (Máxima)")
+        } else {
+            format!("{h}p")
+        };
+
         preview_resolutions.push(crate::models::PreviewResolutionEntry {
             label,
-            height: *h,
+            height: h,
             mp4_url,
             webm_url,
         });
     }
 
-    // Always append "Máxima" pointing to the highest quality stream
-    let max_mp4 = mp4_for_resolutions.iter().max_by_key(|c| c.height.unwrap_or(0));
-    let max_webm = webm_for_resolutions.iter().max_by_key(|c| c.height.unwrap_or(0));
-    if let Some(cand) = max_mp4.or(max_webm) {
-        let max_h = cand.height.unwrap_or(1080);
-        let proxy_u = register_proxy_stream(
-            proxy_port,
-            cand.url.clone(),
-            cand.ua.clone(),
-            cand.content_type.clone(),
-            false,
-        )
-        .await;
-
-        preview_resolutions.push(crate::models::PreviewResolutionEntry {
-            label: "Máxima".to_string(),
-            height: max_h,
-            mp4_url: Some(proxy_u.clone()),
-            webm_url: Some(proxy_u),
-        });
-    }
-
-    // Default to 480p or 720p if available
-    if let Some(pref) = preview_resolutions
-        .iter()
-        .find(|r| r.label == "480p" && (r.mp4_url.is_some() || r.webm_url.is_some()))
-        .or_else(|| {
-            preview_resolutions
-                .iter()
-                .find(|r| r.label == "720p" && (r.mp4_url.is_some() || r.webm_url.is_some()))
-        })
-    {
-        if let Some(ref u) = pref.mp4_url {
+    // Default preview stream URL to the HIGHEST resolution available (top quality)
+    if let Some(top) = preview_resolutions.first() {
+        if let Some(ref u) = top.mp4_url {
             preview_stream_url = Some(u.clone());
         }
-        if let Some(ref u) = pref.webm_url {
+        if let Some(ref u) = top.webm_url {
             preview_webm_url = Some(u.clone());
         }
     }
@@ -4715,5 +4693,11 @@ mod tests {
         invalidate_cached_raw_video_json(&url);
         assert!(get_cached_raw_video_json(&url).is_none());
     }
+
+    
+
+    
+
+    
 }
 
