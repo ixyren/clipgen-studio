@@ -86,6 +86,47 @@ pub fn get_binaries_dir() -> PathBuf {
     bin_dir
 }
 
+/// yt-dlp only enables `deno` by default. Without a JS runtime it cannot solve YouTube's
+/// "n" challenge, so downloads start fast and then get throttled to ~10 KiB/s.
+/// Detect deno / node / bun on PATH (or common install dirs) and enable it explicitly.
+pub fn js_runtime_args() -> Vec<String> {
+    let exe = |name: &str| -> String {
+        if cfg!(target_os = "windows") {
+            format!("{name}.exe")
+        } else {
+            name.to_string()
+        }
+    };
+
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    if cfg!(target_os = "windows") {
+        for var in ["ProgramFiles", "ProgramFiles(x86)"] {
+            if let Some(pf) = std::env::var_os(var) {
+                dirs.push(PathBuf::from(pf).join("nodejs"));
+            }
+        }
+        if let Some(home) = dirs::home_dir() {
+            dirs.push(home.join(".deno").join("bin"));
+        }
+    }
+
+    for runtime in ["deno", "node", "bun"] {
+        let file = exe(runtime);
+        for d in &dirs {
+            let candidate = d.join(&file);
+            if candidate.is_file() {
+                return vec![
+                    "--js-runtimes".to_string(),
+                    format!("{runtime}:{}", candidate.to_string_lossy()),
+                ];
+            }
+        }
+    }
+    Vec::new()
+}
+
 pub fn ytdlp_binary_path() -> PathBuf {
     let name = if cfg!(target_os = "windows") {
         "yt-dlp.exe"

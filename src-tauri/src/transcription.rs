@@ -719,7 +719,8 @@ async fn download_audio_with_ytdlp_mode(
     args.push(trimmed_url.to_string());
 
     let mut cmd = hidden_tokio_command(ytdlp);
-    cmd.args(&args)
+    cmd.args(crate::binary_manager::js_runtime_args())
+        .args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 

@@ -941,7 +941,8 @@ async fn fetch_raw_video_json(job_id: &str, url: &str) -> Result<Value, (bool, S
 
     let ytdlp = ytdlp_binary_path();
     let mut cmd = hidden_tokio_command(&ytdlp);
-    cmd.args(["--no-playlist", "--no-warnings", "-J", url])
+    cmd.args(crate::binary_manager::js_runtime_args())
+        .args(["--no-playlist", "--no-warnings", "-J", url])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 

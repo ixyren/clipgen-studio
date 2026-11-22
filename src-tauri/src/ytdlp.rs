@@ -2772,7 +2772,8 @@ pub async fn run_ytdlp_with_progress(cfg: YtdlpRunConfig<'_>) -> Result<Vec<Stri
     let ytdlp = ensure_ytdlp_ready()?;
 
     let mut cmd = hidden_tokio_command(&ytdlp);
-    cmd.args(&cfg.args)
+    cmd.args(crate::binary_manager::js_runtime_args())
+        .args(&cfg.args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -3166,6 +3167,7 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
     let ytdlp = ensure_ytdlp_ready()?;
     emit_video_load_progress(&app, 8.0, "Conectando con yt-dlp...");
     let output = hidden_tokio_command(&ytdlp)
+        .args(crate::binary_manager::js_runtime_args())
         .args([
             "--dump-single-json",
             "--no-playlist",
