@@ -351,9 +351,9 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
 
   const activeStreamUrl =
     playerMode === "mp4"
-      ? activeResOption?.mp4_url || metadata?.preview_stream_url
+      ? activeResOption?.mp4_url || activeResOption?.webm_url || metadata?.preview_stream_url
       : playerMode === "webm"
-      ? activeResOption?.webm_url || metadata?.preview_webm_url
+      ? activeResOption?.webm_url || activeResOption?.mp4_url || metadata?.preview_webm_url
       : null;
 
   const activeAudioTrack =
@@ -887,10 +887,10 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
     if (isHlsUrl(scrubStreamUrl) && Hls.isSupported()) {
       const scrubHls = new Hls({
         enableWorker: true,
-        autoStartLoad: false,
-        maxBufferLength: 2,
-        maxMaxBufferLength: 4,
-        backBufferLength: 0,
+        autoStartLoad: true,
+        maxBufferLength: 4,
+        maxMaxBufferLength: 8,
+        backBufferLength: 2,
         fragLoadingMaxRetry: 4,
         manifestLoadingMaxRetry: 3,
       });
@@ -898,7 +898,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
       scrubHls.loadSource(scrubStreamUrl);
       scrubHls.attachMedia(sv);
     } else {
-      sv.preload = "metadata";
+      sv.preload = "auto";
       sv.src = scrubStreamUrl;
       sv.load();
     }
@@ -919,16 +919,22 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
     const v = videoRef.current;
     const canvas = trimPreviewCanvasRef.current;
     if (!canvas) return;
-    const src =
-      !preferMain && sv && sv.readyState >= 2 && sv.videoWidth > 0 && sv.videoHeight > 0
-        ? sv
-        : v && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0
-        ? v
-        : null;
-    if (!src) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
+
+    if (preferMain && v && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0) {
+      ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+      return;
+    }
+
+    if (sv && sv.readyState >= 2 && sv.videoWidth > 0 && sv.videoHeight > 0) {
+      ctx.drawImage(sv, 0, 0, canvas.width, canvas.height);
+      return;
+    }
+
+    if (v && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0) {
+      ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+    }
   }, []);
 
   // Serial non-aborting seek queue operating exclusively on the low-res scrubber video
@@ -945,7 +951,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
         pendingSeekTimerRef.current = window.setTimeout(() => {
           pendingSeekTimerRef.current = null;
           flushQueuedSeek();
-        }, 120);
+        }, 60);
       }
       return;
     }
@@ -955,20 +961,20 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
         pendingSeekTimerRef.current = window.setTimeout(() => {
           pendingSeekTimerRef.current = null;
           flushQueuedSeek();
-        }, 450);
+        }, 60);
       }
       return;
     }
 
     const elapsed = Date.now() - lastSeekWriteRef.current;
-    if (elapsed < 55) {
+    if (elapsed < 35) {
       if (pendingSeekTimerRef.current !== null) {
         window.clearTimeout(pendingSeekTimerRef.current);
       }
       pendingSeekTimerRef.current = window.setTimeout(() => {
         pendingSeekTimerRef.current = null;
         flushQueuedSeek();
-      }, Math.max(10, 55 - elapsed));
+      }, Math.max(10, 35 - elapsed));
       return;
     }
 
@@ -1115,16 +1121,20 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
         softAttempts: 0,
         hardAttempts: 0,
       };
-      v.play()
-        .then(() => {
+      if (a && hasAudioTrackRef.current) {
+        a.currentTime = v.currentTime;
+      }
+      const p1 = v.play();
+      const p2 = (a && hasAudioTrackRef.current) ? a.play() : Promise.resolve();
+      Promise.allSettled([p1, p2]).then((results) => {
+        const vOk = results[0].status === "fulfilled";
+        if (vOk) {
           syncMediaSettings();
           setIsPlaying(true);
-          if (a && hasAudioTrack) {
-            a.currentTime = v.currentTime;
-            a.play().catch(() => {});
-          }
-        })
-        .catch(() => setIsPlaying(false));
+        } else {
+          setIsPlaying(false);
+        }
+      });
     } else {
       wantPlayRef.current = false;
       v.pause();
@@ -1406,13 +1416,26 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
 
     const a = audioRef.current;
     if (a && hasAudioTrackRef.current) {
-      if (a.playbackRate !== expectedRate) {
-        a.playbackRate = expectedRate;
-      }
       if (!v.paused && !dragModeRef.current) {
-        if (Math.abs(a.currentTime - t) > 0.25) {
-          a.currentTime = t;
+        const diff = a.currentTime - t;
+        const absDiff = Math.abs(diff);
+
+        if (absDiff > 0.40) {
+          if (!a.seeking) {
+            a.currentTime = t;
+          }
+        } else if (absDiff > 0.04) {
+          if (diff < 0) {
+            a.playbackRate = expectedRate * 1.08;
+          } else {
+            a.playbackRate = expectedRate * 0.92;
+          }
+        } else {
+          if (a.playbackRate !== expectedRate) {
+            a.playbackRate = expectedRate;
+          }
         }
+
         if (a.paused && wantPlayRef.current && v.readyState >= 3) {
           a.play().catch(() => {});
         }
@@ -2230,7 +2253,8 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                     }
                   }}
                   onError={() => {
-                    if (videoRef.current?.hasAttribute("src") || hlsRef.current) {
+                    console.warn("Video stream load error on active stream:", activeStreamUrl);
+                    if (!metadata.preview_stream_url && !metadata.preview_webm_url) {
                       setStreamError(true);
                       setIsLoadingStream(false);
                       setPlayerMode("embed");
@@ -2244,8 +2268,45 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                     ref={audioRef}
                     preload="auto"
                     muted={muted}
-                    onLoadedMetadata={() => syncMediaSettings()}
-                    onCanPlay={() => syncMediaSettings()}
+                    onLoadedMetadata={() => {
+                      syncMediaSettings();
+                      const v = videoRef.current;
+                      const a = audioRef.current;
+                      if (v && a) {
+                        a.currentTime = v.currentTime;
+                      }
+                    }}
+                    onCanPlay={() => {
+                      syncMediaSettings();
+                      const v = videoRef.current;
+                      const a = audioRef.current;
+                      if (v && a && wantPlayRef.current && !dragModeRef.current) {
+                        if (Math.abs(a.currentTime - v.currentTime) > 0.08) {
+                          a.currentTime = v.currentTime;
+                        }
+                        if (a.paused) a.play().catch(() => {});
+                        if (v.paused) v.play().catch(() => {});
+                      }
+                    }}
+                    onWaiting={() => {
+                      const v = videoRef.current;
+                      if (v && !v.paused && !dragModeRef.current) {
+                        v.pause();
+                        setIsLoadingStream(true);
+                      }
+                    }}
+                    onPlaying={() => {
+                      const v = videoRef.current;
+                      const a = audioRef.current;
+                      if (v && a && !dragModeRef.current) {
+                        if (Math.abs(a.currentTime - v.currentTime) > 0.15) {
+                          a.currentTime = v.currentTime;
+                        }
+                        if (v.paused && wantPlayRef.current) {
+                          v.play().catch(() => {});
+                        }
+                      }
+                    }}
                     className="hidden"
                   />
                 )}
@@ -2255,7 +2316,17 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                     ref={scrubVideoRef}
                     muted
                     playsInline
-                    preload="metadata"
+                    preload="auto"
+                    style={{
+                      position: "fixed",
+                      width: "1px",
+                      height: "1px",
+                      opacity: 0.001,
+                      pointerEvents: "none",
+                      left: "-9999px",
+                      top: "-9999px",
+                      zIndex: -1,
+                    }}
                     onLoadedMetadata={() => {
                       if (dragModeRef.current && queuedSeekTimeRef.current !== null) {
                         flushQueuedSeek();
@@ -2263,18 +2334,17 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                     }}
                     onLoadedData={() => {
                       if (dragModeRef.current) {
-                        drawTrimPreviewFrame();
+                        drawTrimPreviewFrame(false);
                         setTrimPreview((prev) => (prev ? { ...prev, seeking: false } : prev));
                       }
                     }}
                     onSeeked={() => {
                       if (dragModeRef.current) {
-                        drawTrimPreviewFrame();
+                        drawTrimPreviewFrame(false);
                         setTrimPreview((prev) => (prev ? { ...prev, seeking: false } : prev));
                         flushQueuedSeek();
                       }
                     }}
-                    className="hidden"
                   />
                 )}
 
@@ -2316,11 +2386,11 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
 
             {/* Video Top HUD Overlay */}
             <div className="pointer-events-none absolute top-3 left-3 right-3 flex items-center justify-between z-20">
-              <div className="flex items-center gap-2 rounded-lg bg-black/75 px-2.5 py-1 text-xs text-white backdrop-blur-md border border-white/10 pointer-events-auto max-w-[55%]">
+              <div className="flex items-center gap-2 rounded-lg bg-black/75 px-2.5 py-1 text-xs text-white backdrop-blur-md border border-white/10 pointer-events-auto max-w-[45%] shrink min-w-0">
                 <span className="truncate font-medium">{metadata.title}</span>
               </div>
 
-              <div className="flex items-center gap-1.5 pointer-events-auto">
+              <div className="flex items-center gap-1.5 pointer-events-auto shrink-0 flex-wrap justify-end">
                 {metadata.audio_tracks.length > 1 && onSelectAudioTrack && (
                   <select
                     value={
@@ -2340,16 +2410,20 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
 
                 {/* Resolution Selector */}
                 {metadata.preview_resolutions &&
-                  metadata.preview_resolutions.length > 0 &&
-                  playerMode !== "embed" && (
-                    <div className="flex items-center gap-0.5 rounded-lg bg-black/80 p-0.5 border border-white/10 backdrop-blur-md">
+                  metadata.preview_resolutions.length > 0 && (
+                    <div className="flex items-center gap-0.5 rounded-lg bg-black/80 p-0.5 border border-white/10 backdrop-blur-md shadow-lg">
                       {metadata.preview_resolutions.map((res) => {
-                        const isSelected = selectedResolution === res.label;
+                        const isSelected = selectedResolution === res.label && playerMode !== "embed";
                         return (
                           <button
                             key={res.label}
                             type="button"
-                            onClick={() => handleResolutionChange(res.label)}
+                            onClick={() => {
+                              if (playerMode === "embed") {
+                                setPlayerMode("mp4");
+                              }
+                              handleResolutionChange(res.label);
+                            }}
                             title={`Cambiar vista previa a ${res.label}`}
                             className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition ${
                               isSelected

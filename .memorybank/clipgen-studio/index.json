@@ -125,14 +125,33 @@
       "tags": [],
       "created": "2026-11-21T21:27:16.843Z",
       "updated": "2026-11-21T21:27:16.844Z"
+    },
+    "a4f52d85e5b4": {
+      "id": "a4f52d85e5b4",
+      "name": "yt-dlp-js-runtime-throttling",
+      "type": "feedback",
+      "description": "",
+      "tags": [],
+      "created": "2026-11-22T02:45:39.504Z",
+      "updated": "2026-11-22T02:45:39.504Z"
+    },
+    "421a74a95f4a": {
+      "id": "421a74a95f4a",
+      "name": "visor-resolution-audio-scrub-fix",
+      "type": "custom",
+      "description": "",
+      "tags": [],
+      "created": "2026-11-22T03:02:55.370Z",
+      "updated": "2026-11-22T03:02:55.370Z"
     }
   },
   "stats": {
-    "total": 9,
+    "total": 11,
     "byType": {
       "project": 7,
-      "feedback": 1,
-      "reference": 1
+      "feedback": 2,
+      "reference": 1,
+      "custom": 1
     }
   }
 }
