@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import type { SavedClipEntry, VideoMetadata } from "../types";
 import { formatTimeShort, formatTimecode, cleanClipTitle } from "../utils/time";
+import { Tooltip } from "./Tooltip";
 
 type PlayerSourceMode = "mp4" | "webm" | "embed";
 
@@ -2361,88 +2362,65 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
 
               <div className="flex items-center gap-1.5 pointer-events-auto shrink-0 flex-wrap justify-end">
                 {metadata.audio_tracks.length > 1 && onSelectAudioTrack && (
-                  <select
-                    value={
-                      selectedAudioTrackId || metadata.audio_tracks[0]?.track_id
-                    }
-                    onChange={(e) => onSelectAudioTrack(e.target.value)}
-                    className="rounded bg-black/80 px-2 py-0.5 text-[10px] text-slate-300 border border-white/10 outline-none"
-                    title="Pista de audio"
-                  >
-                    {metadata.audio_tracks.map((t) => (
-                      <option key={t.track_id} value={t.track_id}>
-                        {t.label || t.language || t.track_id}
-                      </option>
-                    ))}
-                  </select>
+                  <Tooltip side="bottom" content="Seleccionar pista de audio">
+                    <select
+                      value={
+                        selectedAudioTrackId || metadata.audio_tracks[0]?.track_id
+                      }
+                      onChange={(e) => onSelectAudioTrack(e.target.value)}
+                      className="rounded-lg bg-black/80 px-2 py-0.5 text-[10px] text-slate-300 border border-white/10 outline-none backdrop-blur-md"
+                    >
+                      {metadata.audio_tracks.map((t) => (
+                        <option key={t.track_id} value={t.track_id}>
+                          {t.label || t.language || t.track_id}
+                        </option>
+                      ))}
+                    </select>
+                  </Tooltip>
                 )}
 
-                {/* Resolution Selector */}
-                {metadata.preview_resolutions &&
-                  metadata.preview_resolutions.length > 0 && (
-                    <div className="flex items-center gap-0.5 rounded-lg bg-black/80 p-0.5 border border-white/10 backdrop-blur-md shadow-lg">
-                      {metadata.preview_resolutions.map((res) => {
-                        const isSelected = selectedResolution === res.label && playerMode !== "embed";
-                        return (
-                          <button
-                            key={res.label}
-                            type="button"
-                            onClick={() => {
-                              if (playerMode === "embed") {
-                                setPlayerMode("mp4");
-                              }
-                              handleResolutionChange(res.label);
-                            }}
-                            title={`Cambiar vista previa a ${res.label}`}
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition ${
-                              isSelected
-                                ? "bg-indigo-600 text-white shadow-sm"
-                                : "text-slate-400 hover:text-white"
-                            }`}
-                          >
-                            {res.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                <div className="flex items-center gap-1 rounded-lg bg-black/80 p-0.5 border border-white/10 backdrop-blur-md">
-                  <button
-                    type="button"
-                    disabled={!metadata.preview_stream_url}
-                    onClick={() => setPlayerMode("mp4")}
-                    className={`rounded px-2 py-0.5 text-[10px] font-semibold transition ${
-                      playerMode === "mp4"
-                        ? "bg-indigo-600 text-white shadow-sm"
-                        : "text-slate-400 hover:text-white disabled:opacity-30"
-                    }`}
-                  >
-                    MP4
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!metadata.preview_webm_url}
-                    onClick={() => setPlayerMode("webm")}
-                    className={`rounded px-2 py-0.5 text-[10px] font-semibold transition ${
-                      playerMode === "webm"
-                        ? "bg-cyan-600 text-white shadow-sm"
-                        : "text-slate-400 hover:text-white disabled:opacity-30"
-                    }`}
-                  >
-                    WebM
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPlayerMode("embed")}
-                    className={`rounded px-2 py-0.5 text-[10px] font-semibold transition ${
-                      playerMode === "embed"
-                        ? "bg-rose-600 text-white shadow-sm"
-                        : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    Embed
-                  </button>
+                <div className="flex items-center gap-0.5 rounded-lg bg-black/80 p-0.5 border border-white/10 backdrop-blur-md">
+                  <Tooltip side="bottom" content="Reproducción MP4 nativa en proxy local">
+                    <button
+                      type="button"
+                      disabled={!metadata.preview_stream_url}
+                      onClick={() => setPlayerMode("mp4")}
+                      className={`rounded px-2 py-0.5 text-[10px] font-semibold smooth-btn ${
+                        playerMode === "mp4"
+                          ? "bg-indigo-600 text-white shadow-sm"
+                          : "text-slate-400 hover:text-white disabled:opacity-30"
+                      }`}
+                    >
+                      MP4
+                    </button>
+                  </Tooltip>
+                  <Tooltip side="bottom" content="Reproducción alternativa WebM/VP9">
+                    <button
+                      type="button"
+                      disabled={!metadata.preview_webm_url}
+                      onClick={() => setPlayerMode("webm")}
+                      className={`rounded px-2 py-0.5 text-[10px] font-semibold smooth-btn ${
+                        playerMode === "webm"
+                          ? "bg-cyan-600 text-white shadow-sm"
+                          : "text-slate-400 hover:text-white disabled:opacity-30"
+                      }`}
+                    >
+                      WebM
+                    </button>
+                  </Tooltip>
+                  <Tooltip side="bottom" content="Reproductor embebido (útil si el stream directo falla)">
+                    <button
+                      type="button"
+                      onClick={() => setPlayerMode("embed")}
+                      className={`rounded px-2 py-0.5 text-[10px] font-semibold smooth-btn ${
+                        playerMode === "embed"
+                          ? "bg-rose-600 text-white shadow-sm"
+                          : "text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      Embed
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
             </div>
@@ -2539,13 +2517,12 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
             )}
 
             {playerMode !== "embed" && totalBufferedSeconds > 0 && (
-              <span
-                title="Partes del video cargadas actualmente en el buffer (barra celeste en la regla y minimapa)"
-                className="flex items-center gap-1.5 rounded bg-sky-500/10 border border-sky-400/25 px-2 py-0.5 font-mono text-[10px] text-sky-300"
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
-                <span>Cargado: {formatTimeShort(totalBufferedSeconds)}</span>
-              </span>
+              <Tooltip content="Segmentos pre-cargados en caché (franja celeste en regla y minimapa)">
+                <span className="flex items-center gap-1.5 rounded bg-sky-500/10 border border-sky-400/25 px-2 py-0.5 font-mono text-[10px] text-sky-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                  <span>Caché: {formatTimeShort(totalBufferedSeconds)}</span>
+                </span>
+              </Tooltip>
             )}
 
             {clips.length > 0 && (
@@ -2655,29 +2632,31 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
             <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mr-1">
               Zoom:
             </span>
-            <button
-              type="button"
-              onClick={() => handleZoomChange(zoom / 1.5)}
-              disabled={zoom <= 1}
-              className="flex h-6 w-6 items-center justify-center rounded border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10 disabled:opacity-30 transition"
-              title="Alejar Zoom (-)"
-            >
-              <ZoomOut className="h-3 w-3" />
-            </button>
+            <Tooltip content="Alejar línea de tiempo (-)">
+              <button
+                type="button"
+                onClick={() => handleZoomChange(zoom / 1.5)}
+                disabled={zoom <= 1}
+                className="flex h-6 w-6 items-center justify-center rounded border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10 disabled:opacity-30 smooth-btn"
+              >
+                <ZoomOut className="h-3 w-3" />
+              </button>
+            </Tooltip>
 
             <span className="font-mono text-[11px] tabular-nums font-bold text-indigo-300 px-1 min-w-[44px] text-center">
               {zoom.toFixed(zoom >= 10 ? 0 : 1)}x
             </span>
 
-            <button
-              type="button"
-              onClick={() => handleZoomChange(zoom * 1.5)}
-              disabled={zoom >= maxZoom}
-              className="flex h-6 w-6 items-center justify-center rounded border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10 disabled:opacity-30 transition"
-              title="Acercar Zoom (+)"
-            >
-              <ZoomIn className="h-3 w-3" />
-            </button>
+            <Tooltip content="Acercar línea de tiempo (+)">
+              <button
+                type="button"
+                onClick={() => handleZoomChange(zoom * 1.5)}
+                disabled={zoom >= maxZoom}
+                className="flex h-6 w-6 items-center justify-center rounded border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10 disabled:opacity-30 smooth-btn"
+              >
+                <ZoomIn className="h-3 w-3" />
+              </button>
+            </Tooltip>
 
             {/* Quick Presets */}
             <div className="flex flex-wrap items-center gap-0.5 ml-1">
@@ -2686,7 +2665,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                   key={z}
                   type="button"
                   onClick={() => handleZoomChange(z)}
-                  className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold transition ${
+                  className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold smooth-btn ${
                     Math.abs(zoom - z) <= Math.max(0.2, z * 0.05)
                       ? "bg-indigo-600 text-white shadow-sm"
                       : "text-slate-400 hover:text-white hover:bg-white/5"
@@ -2699,63 +2678,66 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
           </div>
 
           {/* Pan & Viewport centering actions */}
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => handlePan(-viewDuration * 0.25)}
-              disabled={viewStart <= 0}
-              className="flex h-6 items-center gap-0.5 rounded border border-white/10 bg-white/[0.04] px-1.5 text-[10px] text-slate-300 hover:bg-white/10 disabled:opacity-30 transition"
-              title="Desplazar a la izquierda"
-            >
-              <ChevronLeft className="h-3 w-3" />
-              <span>Pan</span>
-            </button>
+          <div className="flex items-center gap-1">
+            <Tooltip content="Desplazar ventana a la izquierda">
+              <button
+                type="button"
+                onClick={() => handlePan(-viewDuration * 0.25)}
+                disabled={viewStart <= 0}
+                className="flex h-6 w-6 items-center justify-center rounded border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10 disabled:opacity-30 smooth-btn"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
 
-            <button
-              type="button"
-              onClick={() => handlePan(viewDuration * 0.25)}
-              disabled={viewEnd >= duration}
-              className="flex h-6 items-center gap-0.5 rounded border border-white/10 bg-white/[0.04] px-1.5 text-[10px] text-slate-300 hover:bg-white/10 disabled:opacity-30 transition"
-              title="Desplazar a la derecha"
-            >
-              <span>Pan</span>
-              <ChevronRight className="h-3 w-3" />
-            </button>
+            <Tooltip content="Desplazar ventana a la derecha">
+              <button
+                type="button"
+                onClick={() => handlePan(viewDuration * 0.25)}
+                disabled={viewEnd >= duration}
+                className="flex h-6 w-6 items-center justify-center rounded border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10 disabled:opacity-30 smooth-btn"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
 
-            <button
-              type="button"
-              onClick={handleCenterPlayhead}
-              className="flex h-6 items-center gap-1 rounded border border-white/10 bg-white/[0.04] px-2 text-[10px] text-slate-300 hover:bg-white/10 transition"
-              title="Centrar la vista en el cabezal de reproducción"
-            >
-              <Crosshair className="h-3 w-3 text-indigo-400" />
-              <span>Centrar Cabezal</span>
-            </button>
+            <Tooltip content="Centrar línea de tiempo en la posición actual del cabezal">
+              <button
+                type="button"
+                onClick={handleCenterPlayhead}
+                className="flex h-6 items-center gap-1 rounded border border-white/10 bg-white/[0.04] px-2 text-[10px] text-slate-300 hover:bg-white/10 smooth-btn"
+              >
+                <Crosshair className="h-3 w-3 text-indigo-400" />
+                <span>Centrar</span>
+              </button>
+            </Tooltip>
 
-            <button
-              type="button"
-              onClick={handleToggleFollowPlayhead}
-              className={`flex h-6 items-center gap-1 rounded border px-2 text-[10px] font-semibold transition ${
-                followPlayhead
-                  ? "border-cyan-400/60 bg-cyan-500/20 text-cyan-200 shadow-sm shadow-cyan-500/20"
-                  : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10"
-              }`}
-              title="Fijar el cabezal de reproducción en el centro y seguir automáticamente"
-            >
-              <Pin className={`h-3 w-3 ${followPlayhead ? "text-cyan-300" : "text-slate-400"}`} />
-              <span>Fijar al Centro</span>
-            </button>
+            <Tooltip content="Mantener el cabezal fijado al centro durante la reproducción">
+              <button
+                type="button"
+                onClick={handleToggleFollowPlayhead}
+                className={`flex h-6 items-center gap-1 rounded border px-2 text-[10px] font-semibold smooth-btn ${
+                  followPlayhead
+                    ? "border-cyan-400/60 bg-cyan-500/20 text-cyan-200 shadow-sm shadow-cyan-500/20"
+                    : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10"
+                }`}
+              >
+                <Pin className={`h-3 w-3 ${followPlayhead ? "text-cyan-300" : "text-slate-400"}`} />
+                <span>Seguir</span>
+              </button>
+            </Tooltip>
 
-            <button
-              type="button"
-              onClick={handleFitSelection}
-              disabled={selectionDuration <= 0}
-              className="flex h-6 items-center gap-1 rounded border border-indigo-500/30 bg-indigo-500/15 px-2 text-[10px] font-semibold text-indigo-200 hover:bg-indigo-500/30 transition disabled:opacity-30"
-              title="Ajustar zoom al rango seleccionado [ I - O ]"
-            >
-              <Maximize2 className="h-3 w-3 text-indigo-400" />
-              <span>Ajustar a Selección</span>
-            </button>
+            <Tooltip content="Ajustar el zoom automáticamente al rango activo [ I - O ]">
+              <button
+                type="button"
+                onClick={handleFitSelection}
+                disabled={selectionDuration <= 0}
+                className="flex h-6 items-center gap-1 rounded border border-indigo-500/30 bg-indigo-500/15 px-2 text-[10px] font-semibold text-indigo-200 hover:bg-indigo-500/30 smooth-btn disabled:opacity-30"
+              >
+                <Maximize2 className="h-3 w-3 text-indigo-400" />
+                <span>Ajustar</span>
+              </button>
+            </Tooltip>
           </div>
         </div>
 
@@ -3219,230 +3201,235 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
       {/* ── 3. Tactical Marking Controls Bar ── */}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#18181C] p-2">
         {/* Left: Transport & Step Controls */}
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={togglePlay}
-            disabled={!metadata}
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-500/25 transition hover:bg-indigo-500 disabled:opacity-40"
-            title={isPlaying ? "Pausar (Espacio)" : "Reproducir (Espacio)"}
-          >
-            {isPlaying ? (
-              <Pause className="h-4 w-4" />
-            ) : (
-              <Play className="ml-0.5 h-4 w-4 fill-white" />
-            )}
-          </button>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Tooltip content={isPlaying ? "Pausar (Espacio)" : "Reproducir (Espacio)"}>
+            <button
+              type="button"
+              onClick={togglePlay}
+              disabled={!metadata}
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-500/25 smooth-btn hover:bg-indigo-500 disabled:opacity-40"
+            >
+              {isPlaying ? (
+                <Pause className="h-4 w-4" />
+              ) : (
+                <Play className="ml-0.5 h-4 w-4 fill-white" />
+              )}
+            </button>
+          </Tooltip>
 
-          <button
-            type="button"
-            onClick={() => stepTime(-5)}
-            disabled={!metadata}
-            className="flex h-8 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-xs text-slate-300 hover:bg-white/10 disabled:opacity-40"
-            title="Retroceder 5 segundos"
-          >
-            <RotateCcw className="h-3 w-3" />
-            <span className="tabular-nums">5s</span>
-          </button>
+          <Tooltip content="Retroceder 5s (Shift + ←)">
+            <button
+              type="button"
+              onClick={() => stepTime(-5)}
+              disabled={!metadata}
+              className="flex h-8 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-xs text-slate-300 hover:bg-white/10 smooth-btn disabled:opacity-40"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span className="tabular-nums">5s</span>
+            </button>
+          </Tooltip>
 
-          <button
-            type="button"
-            onClick={() => stepTime(-1)}
-            disabled={!metadata}
-            className="h-8 rounded-lg border border-white/10 bg-white/[0.04] px-2 font-mono text-xs tabular-nums text-slate-300 hover:bg-white/10 disabled:opacity-40"
-            title="Retroceder 1 segundo"
-          >
-            -1s
-          </button>
+          <Tooltip content="Retroceder 1s (←)">
+            <button
+              type="button"
+              onClick={() => stepTime(-1)}
+              disabled={!metadata}
+              className="h-8 rounded-lg border border-white/10 bg-white/[0.04] px-2 font-mono text-xs tabular-nums text-slate-300 hover:bg-white/10 smooth-btn disabled:opacity-40"
+            >
+              -1s
+            </button>
+          </Tooltip>
 
-          <button
-            type="button"
-            onClick={() => stepTime(-0.1)}
-            disabled={!metadata}
-            className="h-8 rounded-lg border border-white/10 bg-white/[0.04] px-1.5 font-mono text-[11px] tabular-nums text-slate-400 hover:bg-white/10 disabled:opacity-40"
-            title="Retroceder 1 fotograma (100ms)"
-          >
-            -0.1s
-          </button>
+          <Tooltip content="Retroceder 100ms">
+            <button
+              type="button"
+              onClick={() => stepTime(-0.1)}
+              disabled={!metadata}
+              className="h-8 rounded-lg border border-white/10 bg-white/[0.04] px-1.5 font-mono text-[11px] tabular-nums text-slate-400 hover:bg-white/10 smooth-btn disabled:opacity-40"
+            >
+              -0.1s
+            </button>
+          </Tooltip>
 
-          <button
-            type="button"
-            onClick={() => stepTime(0.1)}
-            disabled={!metadata}
-            className="h-8 rounded-lg border border-white/10 bg-white/[0.04] px-1.5 font-mono text-[11px] tabular-nums text-slate-400 hover:bg-white/10 disabled:opacity-40"
-            title="Avanzar 1 fotograma (100ms)"
-          >
-            +0.1s
-          </button>
+          <Tooltip content="Avanzar 100ms">
+            <button
+              type="button"
+              onClick={() => stepTime(0.1)}
+              disabled={!metadata}
+              className="h-8 rounded-lg border border-white/10 bg-white/[0.04] px-1.5 font-mono text-[11px] tabular-nums text-slate-400 hover:bg-white/10 smooth-btn disabled:opacity-40"
+            >
+              +0.1s
+            </button>
+          </Tooltip>
 
-          <button
-            type="button"
-            onClick={() => stepTime(1)}
-            disabled={!metadata}
-            className="h-8 rounded-lg border border-white/10 bg-white/[0.04] px-2 font-mono text-xs tabular-nums text-slate-300 hover:bg-white/10 disabled:opacity-40"
-            title="Avanzar 1 segundo"
-          >
-            +1s
-          </button>
+          <Tooltip content="Avanzar 1s (→)">
+            <button
+              type="button"
+              onClick={() => stepTime(1)}
+              disabled={!metadata}
+              className="h-8 rounded-lg border border-white/10 bg-white/[0.04] px-2 font-mono text-xs tabular-nums text-slate-300 hover:bg-white/10 smooth-btn disabled:opacity-40"
+            >
+              +1s
+            </button>
+          </Tooltip>
 
-          <button
-            type="button"
-            onClick={() => stepTime(5)}
-            disabled={!metadata}
-            className="flex h-8 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-xs text-slate-300 hover:bg-white/10 disabled:opacity-40"
-            title="Avanzar 5 segundos"
-          >
-            <span className="tabular-nums">5s</span>
-            <RotateCw className="h-3 w-3" />
-          </button>
+          <Tooltip content="Avanzar 5s (Shift + →)">
+            <button
+              type="button"
+              onClick={() => stepTime(5)}
+              disabled={!metadata}
+              className="flex h-8 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-xs text-slate-300 hover:bg-white/10 smooth-btn disabled:opacity-40"
+            >
+              <span className="tabular-nums">5s</span>
+              <RotateCw className="h-3 w-3" />
+            </button>
+          </Tooltip>
 
-          {/* Loop Range */}
-          <button
-            type="button"
-            onClick={handleToggleLoop}
-            disabled={!metadata}
-            className={`flex h-8 items-center gap-1 rounded-lg border px-2 text-xs font-medium transition ${
-              loopSelection
-                ? "border-indigo-500/60 bg-indigo-500/20 text-indigo-200"
-                : "border-white/10 bg-white/[0.04] text-slate-400 hover:text-white"
-            } disabled:opacity-40`}
-            title="Repetir el rango en bucle (L)"
-          >
-            <Repeat className="h-3 w-3" />
-            <span>Bucle</span>
-          </button>
+          <Tooltip content="Repetir continuamente el rango [ I - O ] (Tecla L)">
+            <button
+              type="button"
+              onClick={handleToggleLoop}
+              disabled={!metadata}
+              className={`flex h-8 items-center gap-1 rounded-lg border px-2 text-xs font-medium smooth-btn ${
+                loopSelection
+                  ? "border-indigo-500/60 bg-indigo-500/20 text-indigo-200"
+                  : "border-white/10 bg-white/[0.04] text-slate-400 hover:text-white"
+              } disabled:opacity-40`}
+            >
+              <Repeat className="h-3 w-3" />
+              <span>Bucle</span>
+            </button>
+          </Tooltip>
 
-          {/* Stop playback at clip end */}
-          <button
-            type="button"
-            onClick={handleToggleStopAtEnd}
-            disabled={!metadata}
-            className={`flex h-8 items-center gap-1 rounded-lg border px-2 text-xs font-medium transition whitespace-nowrap ${
-              stopAtClipEnd
-                ? "border-amber-500/60 bg-amber-500/20 text-amber-200"
-                : "border-white/10 bg-white/[0.04] text-slate-400 hover:text-white"
-            } disabled:opacity-40`}
-            title="Detener la reproducción automáticamente al llegar al final del clip"
-          >
-            <StopCircle className="h-3 w-3" />
-            <span>Parar al fin</span>
-          </button>
+          <Tooltip content="Detener automáticamente al llegar al punto Fin [ O ]">
+            <button
+              type="button"
+              onClick={handleToggleStopAtEnd}
+              disabled={!metadata}
+              className={`flex h-8 items-center gap-1 rounded-lg border px-2 text-xs font-medium smooth-btn whitespace-nowrap ${
+                stopAtClipEnd
+                  ? "border-amber-500/60 bg-amber-500/20 text-amber-200"
+                  : "border-white/10 bg-white/[0.04] text-slate-400 hover:text-white"
+              } disabled:opacity-40`}
+            >
+              <StopCircle className="h-3 w-3" />
+              <span>Parar al fin</span>
+            </button>
+          </Tooltip>
 
-          {/* Volume toggle */}
-          <button
-            type="button"
-            onClick={handleToggleMute}
-            disabled={!metadata}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-400 hover:text-white transition disabled:opacity-40"
-            title={muted ? "Activar sonido" : "Silenciar"}
-          >
-            {muted ? (
-              <VolumeX className="h-3.5 w-3.5 text-rose-400" />
-            ) : (
-              <Volume2 className="h-3.5 w-3.5" />
-            )}
-          </button>
+          <Tooltip content={muted ? "Activar sonido" : "Silenciar audio"}>
+            <button
+              type="button"
+              onClick={handleToggleMute}
+              disabled={!metadata}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-slate-400 hover:text-white smooth-btn disabled:opacity-40"
+            >
+              {muted ? (
+                <VolumeX className="h-3.5 w-3.5 text-rose-400" />
+              ) : (
+                <Volume2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </Tooltip>
 
-          {/* Speed selector */}
-          <select
-            value={playbackRate}
-            disabled={!metadata}
-            onChange={(e) => handleRateChange(parseFloat(e.target.value))}
-            className="h-8 rounded-lg border border-white/10 bg-[#09090B] px-1.5 font-mono text-[11px] text-slate-300 outline-none hover:border-white/20 disabled:opacity-40"
-            title="Velocidad de reproducción"
-          >
-            <option value={0.5}>0.5x</option>
-            <option value={1}>1.0x</option>
-            <option value={1.25}>1.25x</option>
-            <option value={1.5}>1.5x</option>
-            <option value={2}>2.0x</option>
-          </select>
+          <Tooltip content="Velocidad de reproducción">
+            <select
+              value={playbackRate}
+              disabled={!metadata}
+              onChange={(e) => handleRateChange(parseFloat(e.target.value))}
+              className="h-8 rounded-lg border border-white/10 bg-[#09090B] px-1.5 font-mono text-[11px] text-slate-300 outline-none hover:border-white/20 disabled:opacity-40 cursor-pointer"
+            >
+              <option value={0.5}>0.5x</option>
+              <option value={1}>1.0x</option>
+              <option value={1.25}>1.25x</option>
+              <option value={1.5}>1.5x</option>
+              <option value={2}>2.0x</option>
+            </select>
+          </Tooltip>
 
           {/* Calidad de Reproducción en Barra Principal */}
           {metadata && metadata.preview_resolutions && metadata.preview_resolutions.length > 0 && (
-            <div
-              className="flex items-center gap-1 rounded-lg border border-white/10 bg-[#09090B] px-2 h-8"
-              title="Calidad de reproducción del visor"
-            >
-              <Sliders className="h-3 w-3 text-indigo-400 shrink-0" />
-              <select
-                value={selectedResolution}
-                onChange={(e) => {
-                  if (playerMode === "embed") {
-                    setPlayerMode("mp4");
-                  }
-                  handleResolutionChange(e.target.value);
-                }}
-                className="bg-transparent font-mono text-[11px] font-semibold text-indigo-300 outline-none cursor-pointer"
-              >
-                {metadata.preview_resolutions.map((res) => (
-                  <option key={res.label} value={res.label} className="bg-[#121218] text-white">
-                    {res.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <Tooltip content="Calidad de video en el visor (y miniatura de arrastre)">
+              <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-[#09090B] px-2 h-8">
+                <Sliders className="h-3 w-3 text-indigo-400 shrink-0" />
+                <select
+                  value={selectedResolution}
+                  onChange={(e) => {
+                    if (playerMode === "embed") {
+                      setPlayerMode("mp4");
+                    }
+                    handleResolutionChange(e.target.value);
+                  }}
+                  className="bg-transparent font-mono text-[11px] font-semibold text-indigo-300 outline-none cursor-pointer"
+                >
+                  {metadata.preview_resolutions.map((res) => (
+                    <option key={res.label} value={res.label} className="bg-[#121218] text-white">
+                      {res.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </Tooltip>
           )}
         </div>
 
         {/* Right: In / Out Marking buttons & Add Clip */}
         <div className="flex items-center gap-2">
-          {/* Mark IN [ I ] */}
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            type="button"
-            onClick={markInAtCurrent}
-            disabled={!metadata}
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-600/15 px-3 text-xs font-semibold text-indigo-200 hover:bg-indigo-600/30 hover:border-indigo-500/50 transition disabled:opacity-40"
-            title="Marcar Inicio aquí (Atajo: tecla [ I ])"
-          >
-            <MapPin className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Inicio</span>
-            <span className="rounded bg-indigo-500/25 px-1 py-0.2 font-mono text-[10px] text-indigo-300">
-              [ I ]
-            </span>
-          </motion.button>
-
-          {/* Mark OUT [ O ] */}
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            type="button"
-            onClick={markOutAtCurrent}
-            disabled={!metadata}
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-600/15 px-3 text-xs font-semibold text-indigo-200 hover:bg-indigo-600/30 hover:border-indigo-500/50 transition disabled:opacity-40"
-            title="Marcar Fin aquí (Atajo: tecla [ O ])"
-          >
-            <Flag className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Fin</span>
-            <span className="rounded bg-indigo-500/25 px-1 py-0.2 font-mono text-[10px] text-indigo-300">
-              [ O ]
-            </span>
-          </motion.button>
-
-          {/* Clip Insertion Number (optional ordinal position) */}
-          <div
-            className="relative flex items-center"
-            title={`Número donde insertar este clip (vacío = #${nextDefaultClipNumber}; si pones otro número, los demás se recorren automáticamente)`}
-          >
-            <span className="pointer-events-none absolute left-2 font-mono text-[11px] font-bold text-indigo-400">
-              #
-            </span>
-            <input
-              id="clip-position-input"
-              type="number"
-              min={clipStartIndex}
-              max={nextDefaultClipNumber}
-              value={clipNumberInput}
-              onChange={(e) => setClipNumberInput(e.target.value)}
-              placeholder={String(nextDefaultClipNumber)}
+          <Tooltip content="Marcar punto de Inicio aquí (Atajo: tecla I)">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              type="button"
+              onClick={markInAtCurrent}
               disabled={!metadata}
-              className="h-9 w-16 rounded-lg border border-white/10 bg-[#09090B] pl-5 pr-1.5 text-center font-mono text-xs font-bold text-indigo-300 placeholder-slate-500 outline-none focus:border-indigo-500/60 transition-all disabled:opacity-40"
-            />
-          </div>
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-600/15 px-3 text-xs font-semibold text-indigo-200 hover:bg-indigo-600/30 hover:border-indigo-500/50 smooth-btn disabled:opacity-40"
+            >
+              <MapPin className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Inicio</span>
+              <span className="rounded bg-indigo-500/25 px-1 py-0.2 font-mono text-[10px] text-indigo-300">
+                I
+              </span>
+            </motion.button>
+          </Tooltip>
 
-          {/* Clip Name Optional Input */}
+          <Tooltip content="Marcar punto de Fin aquí (Atajo: tecla O)">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              type="button"
+              onClick={markOutAtCurrent}
+              disabled={!metadata}
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-600/15 px-3 text-xs font-semibold text-indigo-200 hover:bg-indigo-600/30 hover:border-indigo-500/50 smooth-btn disabled:opacity-40"
+            >
+              <Flag className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Fin</span>
+              <span className="rounded bg-indigo-500/25 px-1 py-0.2 font-mono text-[10px] text-indigo-300">
+                O
+              </span>
+            </motion.button>
+          </Tooltip>
+
+          <Tooltip
+            content={`Posición donde insertar (vacío = #${nextDefaultClipNumber}; los demás se recorren)`}
+          >
+            <div className="relative flex items-center">
+              <span className="pointer-events-none absolute left-2 font-mono text-[11px] font-bold text-indigo-400">
+                #
+              </span>
+              <input
+                id="clip-position-input"
+                type="number"
+                min={clipStartIndex}
+                max={nextDefaultClipNumber}
+                value={clipNumberInput}
+                onChange={(e) => setClipNumberInput(e.target.value)}
+                placeholder={String(nextDefaultClipNumber)}
+                disabled={!metadata}
+                className="h-9 w-15 rounded-lg border border-white/10 bg-[#09090B] pl-5 pr-1.5 text-center font-mono text-xs font-bold text-indigo-300 placeholder-slate-500 outline-none focus:border-indigo-500/60 transition-all disabled:opacity-40"
+              />
+            </div>
+          </Tooltip>
+
           <div className="relative">
             <input
               id="clip-name-input"
@@ -3455,19 +3442,19 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
             />
           </div>
 
-          {/* "+ Añadir a la lista" Button */}
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            type="button"
-            onClick={handleAddCurrentClip}
-            disabled={!metadata || selectionDuration <= 0}
-            className="flex h-9 items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-3.5 text-xs font-semibold text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-400 hover:to-violet-500 transition disabled:cursor-not-allowed disabled:opacity-40"
-            title="Añadir este segmento a la cola de clips (Atajo: Enter)"
-          >
-            <Plus className="h-4 w-4 stroke-[2.5]" />
-            <span>+ Añadir a la lista</span>
-          </motion.button>
+          <Tooltip content="Añadir segmento seleccionado a la cola (Atajo: Enter)">
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              type="button"
+              onClick={handleAddCurrentClip}
+              disabled={!metadata || selectionDuration <= 0}
+              className="flex h-9 items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-3.5 text-xs font-semibold text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-400 hover:to-violet-500 smooth-btn disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Plus className="h-4 w-4 stroke-[2.5]" />
+              <span>Añadir</span>
+            </motion.button>
+          </Tooltip>
         </div>
       </div>
     </section>

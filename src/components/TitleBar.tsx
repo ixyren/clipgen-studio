@@ -14,8 +14,11 @@ import {
   Settings2,
   AlertTriangle,
   Sparkles,
+  Check,
+  ArrowRight,
 } from "lucide-react";
 import type { BinaryStatus } from "../types";
+import { Tooltip } from "./Tooltip";
 
 interface TitleBarProps {
   url: string;
@@ -44,6 +47,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 }) => {
   const [isMaximized, setIsMaximized] = useState(false);
   const [pasteNotice, setPasteNotice] = useState(false);
+  const [promptCopied, setPromptCopied] = useState(false);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -185,6 +189,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     }
   };
 
+  const handleCopyPrompt = () => {
+    onCopyAiPrompt();
+    setPromptCopied(true);
+    setTimeout(() => setPromptCopied(false), 1500);
+  };
+
   const enginesReady =
     Boolean(binaryStatus?.ytdlp_installed) &&
     Boolean(binaryStatus?.ffmpeg_installed);
@@ -194,171 +204,185 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       data-tauri-drag-region
       onMouseDown={handleStartDragging}
       onDoubleClick={handleDoubleClick}
-      className="relative z-40 flex h-14 w-full select-none items-center justify-between border-b border-white/10 bg-[#09090B]/95 px-3 backdrop-blur-xl cursor-default"
+      className="relative z-40 flex h-13 w-full select-none items-center justify-between border-b border-white/10 bg-[#09090B]/95 px-3 backdrop-blur-xl cursor-default"
     >
       {/* Left: Brand Identity (Draggable) */}
       <div
         data-tauri-drag-region
-        className="flex items-center gap-3 pr-4 cursor-default shrink-0"
+        className="flex items-center gap-2.5 pr-3 cursor-default shrink-0"
       >
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 shadow-md shadow-indigo-500/25 pointer-events-none">
           <Scissors className="h-4 w-4 text-white" />
         </div>
-        <div className="flex flex-col pointer-events-none">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold tracking-tight text-white">
-              ClipGen
-            </span>
-            <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-indigo-300">
-              STUDIO
-            </span>
-          </div>
+        <div className="flex items-center gap-1.5 pointer-events-none">
+          <span className="text-sm font-bold tracking-tight text-white">
+            ClipGen
+          </span>
+          <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-indigo-300">
+            STUDIO
+          </span>
+          <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[9px] font-semibold text-slate-400">
+            v0.2.0
+          </span>
         </div>
       </div>
 
       {/* Center: Command Bar Container (Draggable around form) */}
       <div
         data-tauri-drag-region
-        className="flex flex-1 max-w-2xl items-center justify-center px-4 cursor-default"
+        className="flex flex-1 max-w-2xl items-center justify-center px-3 cursor-default"
       >
         <form
           data-no-drag
           onSubmit={handleSubmit}
-          className="flex w-full items-center gap-2 rounded-xl border border-white/10 bg-[#18181C] p-1.5 pl-3 transition-all focus-within:border-indigo-500/60 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:shadow-lg focus-within:shadow-indigo-500/10 cursor-auto"
+          className="flex w-full items-center gap-1.5 rounded-xl border border-white/10 bg-[#18181C] p-1 pl-3 transition-all focus-within:border-indigo-500/60 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:shadow-lg focus-within:shadow-indigo-500/10 cursor-auto"
         >
-          <Search className="pointer-events-none h-4 w-4 text-slate-400 shrink-0" />
-          
+          <Search className="pointer-events-none h-3.5 w-3.5 text-slate-400 shrink-0" />
+
           <input
             type="text"
             value={url}
             onChange={(e) => onUrlChange(e.target.value)}
-            placeholder="Pega la URL del stream o VOD (YouTube, Twitch, Kick...)"
+            placeholder="Pega URL de YouTube, Twitch o Kick..."
             className="flex-1 min-w-0 bg-transparent text-xs text-white placeholder-slate-500 outline-none"
           />
 
-          {/* Paste button: cleanly placed beside input */}
-          <button
-            type="button"
-            onClick={handlePaste}
-            title="Pegar enlace del portapapeles"
-            className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:bg-white/10 hover:text-white transition shrink-0"
-          >
-            <ClipboardPaste className="h-3.5 w-3.5 text-indigo-400" />
-            <span>{pasteNotice ? "¡Pegado!" : "Pegar"}</span>
-          </button>
+          <Tooltip side="bottom" content="Pegar enlace del portapapeles y cargar">
+            <button
+              type="button"
+              onClick={handlePaste}
+              className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:bg-white/10 hover:text-white smooth-btn shrink-0"
+            >
+              <ClipboardPaste className="h-3.5 w-3.5 text-indigo-400" />
+              <span>{pasteNotice ? "¡Pegado!" : "Pegar"}</span>
+            </button>
+          </Tooltip>
 
-          {/* Submit / Cargar Button: cleanly placed beside Pegar, says only 'Cargar' */}
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            type="submit"
-            disabled={analyzing || !url.trim()}
-            className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-md shadow-indigo-500/25 transition disabled:cursor-not-allowed disabled:opacity-40 shrink-0"
-          >
-            {analyzing ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>Cargando...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>Cargar</span>
-              </>
-            )}
-          </motion.button>
+          <Tooltip side="bottom" content="Cargar video en el visor">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              type="submit"
+              disabled={analyzing || !url.trim()}
+              className="flex items-center gap-1 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-3 py-1 text-xs font-semibold text-white shadow-md shadow-indigo-500/25 smooth-btn disabled:cursor-not-allowed disabled:opacity-40 shrink-0"
+            >
+              {analyzing ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Cargando</span>
+                </>
+              ) : (
+                <>
+                  <span>Cargar</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </>
+              )}
+            </motion.button>
+          </Tooltip>
 
-          {/* Extraer Transcripción button */}
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            type="button"
-            onClick={onOpenTranscription}
-            disabled={analyzing || !url.trim()}
-            title="Extraer transcripción local con timestamps y picos de audio (Whisper GPU)"
-            className="flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 hover:text-white transition disabled:cursor-not-allowed disabled:opacity-40 shrink-0"
+          <Tooltip
+            side="bottom"
+            content="Transcribir audio en GPU local con timestamps, emociones y picos de volumen"
           >
-            <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Extraer Transcripción</span>
-          </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              type="button"
+              onClick={onOpenTranscription}
+              disabled={analyzing || !url.trim()}
+              className="flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 hover:text-white smooth-btn disabled:cursor-not-allowed disabled:opacity-40 shrink-0"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Transcribir</span>
+            </motion.button>
+          </Tooltip>
         </form>
       </div>
 
-      {/* Right: Engine status, Settings & Native Window Controls */}
+      {/* Right: Prompt IA, Unified Settings+Status & Window Controls */}
       <div
         data-tauri-drag-region
         className="flex items-center gap-2 pl-2 shrink-0"
       >
-        <button
-          type="button"
-          onClick={onCopyAiPrompt}
-          title="Copiar prompt maestro para IA (ChatGPT / Claude / Gemini)"
-          className="hidden md:flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-300 hover:bg-white/10 hover:text-white transition"
+        <Tooltip
+          side="bottom"
+          content="Copiar prompt maestro para generar clips JSON con IA (ChatGPT / Claude / Gemini)"
         >
-          <Copy className="h-3 w-3 text-indigo-400" />
-          <span>Prompt IA</span>
-        </button>
-        {/* Engine status indicator pill */}
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          title={
-            enginesReady
-              ? "yt-dlp y FFmpeg listos para exportar"
-              : "Verificando binarios del motor..."
-          }
-          className="hidden sm:flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#18181C] px-2.5 py-1 text-xs text-slate-300 hover:border-white/20 transition"
-        >
-          <div
-            className={`h-2 w-2 rounded-full ${
-              enginesReady ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" : "bg-amber-400 animate-pulse"
+          <button
+            type="button"
+            onClick={handleCopyPrompt}
+            className={`hidden md:flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium smooth-btn ${
+              promptCopied
+                ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10 hover:text-white"
             }`}
-          />
-          <span className="text-[11px] font-medium text-slate-300">
-            {enginesReady ? "Motores OK" : "Config"}
-          </span>
-        </button>
+          >
+            {promptCopied ? (
+              <Check className="h-3 w-3 text-emerald-400" />
+            ) : (
+              <Copy className="h-3 w-3 text-indigo-400" />
+            )}
+            <span>{promptCopied ? "¡Copiado!" : "Prompt IA"}</span>
+          </button>
+        </Tooltip>
 
-        {/* Settings button */}
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          title="Ajustes de descarga y exportación"
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-[#18181C] text-slate-300 hover:border-white/20 hover:text-white transition"
+        <Tooltip
+          side="bottom"
+          content={
+            enginesReady
+              ? "Ajustes de exportación · Motores yt-dlp y FFmpeg listos"
+              : "Ajustes de exportación · Verificando o actualizando motores..."
+          }
         >
-          <Settings2 className="h-4 w-4" />
-        </button>
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="flex h-8 items-center gap-2 rounded-lg border border-white/10 bg-[#18181C] px-2.5 text-slate-300 hover:border-white/20 hover:text-white smooth-btn"
+          >
+            <div
+              className={`h-2 w-2 rounded-full ${
+                enginesReady
+                  ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
+                  : "bg-amber-400 animate-pulse"
+              }`}
+            />
+            <Settings2 className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
 
         {/* Native Window Controls */}
         <div className="flex items-center ml-1 border-l border-white/10 pl-2">
-          <button
-            type="button"
-            onClick={handleMinimize}
-            title="Minimizar"
-            className="flex h-8 w-9 items-center justify-center rounded text-slate-400 hover:bg-white/10 hover:text-white transition"
-          >
-            <Minus className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={handleToggleMaximize}
-            title={isMaximized ? "Restaurar" : "Maximizar"}
-            className="flex h-8 w-9 items-center justify-center rounded text-slate-400 hover:bg-white/10 hover:text-white transition"
-          >
-            {isMaximized ? (
-              <Copy className="h-3.5 w-3.5 rotate-180" />
-            ) : (
-              <Square className="h-3.5 w-3.5" />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={handleClose}
-            title="Cerrar"
-            className="flex h-8 w-9 items-center justify-center rounded text-slate-400 hover:bg-rose-600 hover:text-white transition"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <Tooltip side="bottom" content="Minimizar">
+            <button
+              type="button"
+              onClick={handleMinimize}
+              className="flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:bg-white/10 hover:text-white smooth-btn"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+          </Tooltip>
+          <Tooltip side="bottom" content={isMaximized ? "Restaurar" : "Maximizar"}>
+            <button
+              type="button"
+              onClick={handleToggleMaximize}
+              className="flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:bg-white/10 hover:text-white smooth-btn"
+            >
+              {isMaximized ? (
+                <Copy className="h-3.5 w-3.5 rotate-180" />
+              ) : (
+                <Square className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </Tooltip>
+          <Tooltip side="bottom" content="Cerrar">
+            <button
+              type="button"
+              onClick={handleClose}
+              className="flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:bg-rose-600 hover:text-white smooth-btn"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </Tooltip>
         </div>
       </div>
 

@@ -873,6 +873,17 @@ export function App() {
     const clipsToExport = savedClips.filter((c) => selectedClipIds.has(c.id));
     if (clipsToExport.length === 0) return;
 
+    // Clear finished/errored/cancelled banners before launching a new export
+    setJobs((prev) =>
+      prev.filter(
+        (j) =>
+          j.status === "downloading" ||
+          j.status === "cutting" ||
+          j.status === "merging" ||
+          j.status === "queued"
+      )
+    );
+
     const requests = buildBatchRequests(
       clipsToExport,
       options.output_dir,
@@ -905,6 +916,20 @@ export function App() {
       console.error("Error cancelando trabajo:", err);
     }
   };
+
+  const handleDismissJob = useCallback((jobId?: string) => {
+    setJobs((prev) =>
+      jobId
+        ? prev.filter((j) => j.job_id !== jobId)
+        : prev.filter(
+            (j) =>
+              j.status === "downloading" ||
+              j.status === "cutting" ||
+              j.status === "merging" ||
+              j.status === "queued"
+          )
+    );
+  }, []);
 
   // Active or latest job for the progress bar
   const latestJob = jobs[0] ?? null;
@@ -979,6 +1004,7 @@ export function App() {
           onExportSelected={handleExportSelected}
           activeJob={latestJob}
           onCancelJob={handleCancelJob}
+          onDismissJob={handleDismissJob}
           chapters={metadata?.chapters ?? []}
           onAddAllChapters={handleAddAllChapters}
           marginBefore={marginBefore}
@@ -992,7 +1018,6 @@ export function App() {
           onFilenameFormatChange={setFilenameFormat}
           onOpenImportJson={() => setIsImportJsonOpen(true)}
           onOpenPasteJson={handleDirectPasteJson}
-          onCopyAiPrompt={handleCopyAiPrompt}
           clipStartIndex={clipStartIndex}
           onClipStartIndexChange={handleClipStartIndexChange}
           qualityPreset={options.quality_preset}
