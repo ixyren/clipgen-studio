@@ -128,6 +128,19 @@ export const ClipQueuePanel: React.FC<ClipQueuePanelProps> = ({
   const [moveNumberValue, setMoveNumberValue] = useState("");
   const [showBatchOptions, setShowBatchOptions] = useState(false);
   const [expandedAdjustId, setExpandedAdjustId] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = setTimeout(() => setConfirmClear(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmClear]);
+
+  useEffect(() => {
+    if (clips.length === 0 && confirmClear) {
+      setConfirmClear(false);
+    }
+  }, [clips.length, confirmClear]);
 
   const hasLoadedVideo = Boolean(currentVideoId || currentVideoUrl);
 
@@ -215,7 +228,7 @@ export const ClipQueuePanel: React.FC<ClipQueuePanelProps> = ({
   const isCancelled = activeJob?.status === "cancelled";
 
   return (
-    <section className="flex h-full w-[30%] flex-col rounded-2xl border border-white/10 bg-[#111114] shadow-2xl overflow-hidden select-none">
+    <section className="flex h-full w-[30%] min-w-[330px] max-w-[430px] shrink-0 flex-col rounded-2xl border border-white/10 bg-[#111114] shadow-2xl overflow-hidden select-none">
       {/* ── 1. Compact Header with Counters, Filter & Collapsible Batch Accordion ── */}
       <div className="flex flex-col gap-2 border-b border-white/10 bg-[#18181C]/50 p-3">
         <div className="flex items-center justify-between gap-2">
@@ -228,7 +241,7 @@ export const ClipQueuePanel: React.FC<ClipQueuePanelProps> = ({
                 <h3 className="text-xs font-bold tracking-tight text-white">
                   Cola
                 </h3>
-                <span className="rounded bg-indigo-500/15 border border-indigo-500/25 px-1.5 py-0.2 font-mono text-[10px] font-bold tabular-nums text-indigo-300">
+                <span className="rounded bg-indigo-500/15 border border-indigo-500/25 px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums text-indigo-300">
                   {selectedClips.length}/{clips.length}
                 </span>
               </div>
@@ -243,7 +256,7 @@ export const ClipQueuePanel: React.FC<ClipQueuePanelProps> = ({
                 className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-300 hover:bg-white/10 hover:text-white smooth-btn"
               >
                 <ClipboardPaste className="h-3 w-3 text-indigo-400" />
-                <span>Pegar JSON</span>
+                <span>Pegar</span>
               </button>
             </Tooltip>
 
@@ -254,7 +267,7 @@ export const ClipQueuePanel: React.FC<ClipQueuePanelProps> = ({
                 className="flex h-7 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-[11px] font-medium text-slate-300 hover:bg-white/10 hover:text-white smooth-btn"
               >
                 <FileJson className="h-3 w-3 text-indigo-400" />
-                <span>JSON</span>
+                <span>Archivo</span>
               </button>
             </Tooltip>
 
@@ -272,13 +285,31 @@ export const ClipQueuePanel: React.FC<ClipQueuePanelProps> = ({
             )}
 
             {clips.length > 0 && (
-              <Tooltip content="Vaciar todos los clips guardados">
+              <Tooltip
+                content={
+                  confirmClear
+                    ? "Haz clic de nuevo para confirmar el vaciado de la cola"
+                    : "Vaciar todos los clips guardados"
+                }
+              >
                 <button
                   type="button"
-                  onClick={onClearAll}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-400 smooth-btn"
+                  onClick={() => {
+                    if (confirmClear) {
+                      setConfirmClear(false);
+                      onClearAll();
+                    } else {
+                      setConfirmClear(true);
+                    }
+                  }}
+                  className={`flex h-7 items-center justify-center gap-1 rounded-lg border smooth-btn ${
+                    confirmClear
+                      ? "border-rose-500/50 bg-rose-500/20 px-2 text-[10px] font-bold text-rose-200 animate-pulse"
+                      : "w-7 border-white/10 text-slate-400 hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-400"
+                  }`}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                  {confirmClear && <span>¿Confirmar?</span>}
                 </button>
               </Tooltip>
             )}
@@ -369,10 +400,10 @@ export const ClipQueuePanel: React.FC<ClipQueuePanelProps> = ({
                 <span>Lote y Márgenes</span>
               </div>
               <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-400">
-                <span className="rounded bg-indigo-500/15 px-1.5 py-0.2 text-indigo-300 font-bold">
+                <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-indigo-300 font-bold">
                   #{clipStartIndex}
                 </span>
-                <span className="rounded bg-black/50 border border-white/10 px-1.5 py-0.2 tabular-nums">
+                <span className="rounded bg-black/50 border border-white/10 px-1.5 py-0.5 tabular-nums">
                   -{marginBefore}s / +{marginAfter}s
                 </span>
                 <ChevronDown
@@ -827,7 +858,7 @@ export const ClipQueuePanel: React.FC<ClipQueuePanelProps> = ({
                         {hasMargin && (
                           <Tooltip content="Rango efectivo exportado tras aplicar el margen de seguridad">
                             <span className="rounded bg-emerald-950/35 border border-emerald-500/25 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-emerald-400">
-                              +{formatTimecode(effStart)} → {formatTimecode(effEnd)}
+                              Margen: {formatTimecode(effStart)} → {formatTimecode(effEnd)}
                             </span>
                           </Tooltip>
                         )}
@@ -919,27 +950,59 @@ export const ClipQueuePanel: React.FC<ClipQueuePanelProps> = ({
         {/* Quick Toggles: Precise Cut & Merge */}
         <div className="grid grid-cols-2 gap-1.5 text-[11px]">
           <Tooltip content="Recodifica en los bordes para un corte exacto al fotograma. Desactivado = copia directa instantánea sin pérdida">
-            <label className="flex w-full items-center gap-2 cursor-pointer rounded-lg border border-white/5 bg-white/[0.02] px-2 py-1.5 hover:bg-white/[0.05] smooth-btn">
-              <input
-                type="checkbox"
-                checked={preciseCut}
-                onChange={(e) => onTogglePreciseCut(e.target.checked)}
-                className="accent-indigo-500 h-3.5 w-3.5 rounded"
-              />
-              <span className="text-slate-300 truncate">Corte Preciso</span>
-            </label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={preciseCut}
+              onClick={() => onTogglePreciseCut(!preciseCut)}
+              className={`flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 smooth-btn ${
+                preciseCut
+                  ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-200"
+                  : "border-white/5 bg-white/[0.02] text-slate-300 hover:bg-white/[0.05]"
+              }`}
+            >
+              <span className="truncate font-medium">Corte Preciso</span>
+              <span
+                className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                  preciseCut ? "bg-indigo-500" : "bg-white/15"
+                }`}
+              >
+                <motion.span
+                  initial={false}
+                  animate={{ x: preciseCut ? 14 : 2 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 32 }}
+                  className="inline-block h-3 w-3 rounded-full bg-white shadow-sm"
+                />
+              </span>
+            </button>
           </Tooltip>
 
           <Tooltip content="Combina todos los clips seleccionados en un único archivo de video continuo">
-            <label className="flex w-full items-center gap-2 cursor-pointer rounded-lg border border-white/5 bg-white/[0.02] px-2 py-1.5 hover:bg-white/[0.05] smooth-btn">
-              <input
-                type="checkbox"
-                checked={mergeClips}
-                onChange={(e) => onToggleMergeClips(e.target.checked)}
-                className="accent-indigo-500 h-3.5 w-3.5 rounded"
-              />
-              <span className="text-slate-300 truncate">Unir en 1 video</span>
-            </label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={mergeClips}
+              onClick={() => onToggleMergeClips(!mergeClips)}
+              className={`flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 smooth-btn ${
+                mergeClips
+                  ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-200"
+                  : "border-white/5 bg-white/[0.02] text-slate-300 hover:bg-white/[0.05]"
+              }`}
+            >
+              <span className="truncate font-medium">Unir en 1 video</span>
+              <span
+                className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                  mergeClips ? "bg-indigo-500" : "bg-white/15"
+                }`}
+              >
+                <motion.span
+                  initial={false}
+                  animate={{ x: mergeClips ? 14 : 2 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 32 }}
+                  className="inline-block h-3 w-3 rounded-full bg-white shadow-sm"
+                />
+              </span>
+            </button>
           </Tooltip>
         </div>
 
@@ -988,13 +1051,13 @@ export const ClipQueuePanel: React.FC<ClipQueuePanelProps> = ({
               }
               className="h-7 w-full rounded-lg bg-black/40 border border-white/10 px-2 font-medium text-[11px] text-indigo-300 outline-none focus:border-indigo-500 cursor-pointer"
             >
-              <option value="best" className="bg-[#111114]">Calidad: Máxima</option>
-              <option value="2160" className="bg-[#111114]">Calidad: 4K 2160p</option>
-              <option value="1440" className="bg-[#111114]">Calidad: 2K 1440p</option>
-              <option value="1080" className="bg-[#111114]">Calidad: 1080p</option>
-              <option value="720" className="bg-[#111114]">Calidad: 720p</option>
-              <option value="480" className="bg-[#111114]">Calidad: 480p</option>
-              <option value="360" className="bg-[#111114]">Calidad: 360p</option>
+              <option value="best" className="bg-[#121218] text-white">Calidad: Máxima</option>
+              <option value="2160" className="bg-[#121218] text-white">Calidad: 4K 2160p</option>
+              <option value="1440" className="bg-[#121218] text-white">Calidad: 2K 1440p</option>
+              <option value="1080" className="bg-[#121218] text-white">Calidad: 1080p</option>
+              <option value="720" className="bg-[#121218] text-white">Calidad: 720p</option>
+              <option value="480" className="bg-[#121218] text-white">Calidad: 480p</option>
+              <option value="360" className="bg-[#121218] text-white">Calidad: 360p</option>
             </select>
           </Tooltip>
 

@@ -1805,11 +1805,13 @@ async fn register_hls_proxy_stream(
     format!("http://{host}:{port}/hls/{id}/index.m3u8")
 }
 
+#[derive(Clone)]
 struct DashHlsCandidate {
     score: u64,
     fragments: Vec<String>,
     ua: String,
     duration_secs: f64,
+    height: Option<u32>,
 }
 
 async fn register_dash_hls_proxy_stream(
@@ -3023,6 +3025,180 @@ struct StreamCandidate {
     ua: String,
     content_type: String,
     height: Option<u32>,
+    is_hls: bool,
+    is_av1: bool,
+}
+
+fn trim_url_wrappers(s: &str) -> &str {
+    s.trim_matches(|c: char| {
+        matches!(c, '"' | '\'' | '<' | '>' | '(' | ')' | '[' | ']' | ',' | ';')
+    })
+}
+
+pub fn sanitize_input_url(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    for token in trimmed.split_whitespace() {
+        let cleaned = trim_url_wrappers(token);
+        if cleaned.starts_with("http://") || cleaned.starts_with("https://") {
+            return cleaned.to_string();
+        }
+    }
+    trim_url_wrappers(trimmed).to_string()
+}
+
+pub fn parse_ytdlp_json_stdout(stdout: &[u8]) -> Result<Value, String> {
+    if let Ok(val) = serde_json::from_slice::<Value>(stdout) {
+        if val.is_object() {
+            return Ok(val);
+        }
+    }
+    let text = String::from_utf8_lossy(stdout);
+    for line in text.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('{') {
+            if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
+                if val.is_object() {
+                    return Ok(val);
+                }
+            }
+        }
+    }
+    if let (Some(start), Some(end)) = (text.find('{'), text.rfind('}')) {
+        if end > start {
+            if let Ok(val) = serde_json::from_str::<Value>(&text[start..=end]) {
+                if val.is_object() {
+                    return Ok(val);
+                }
+            }
+        }
+    }
+    Err("Error leyendo metadatos JSON de yt-dlp: la respuesta no contiene un objeto JSON válido.".to_string())
+}
+
+pub fn extract_friendly_ytdlp_error(stderr: &str) -> String {
+    let error_line = stderr
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && l.to_ascii_lowercase().starts_with("error:"))
+        .or_else(|| {
+            stderr.lines().rev().map(str::trim).find(|l| {
+                !l.is_empty()
+                    && !l.starts_with("Traceback")
+                    && !l.starts_with("File \"")
+                    && !l.starts_with("WARNING:")
+            })
+        })
+        .unwrap_or("No se pudo analizar la URL.");
+
+    let cleaned = error_line
+        .strip_prefix("ERROR:")
+        .or_else(|| error_line.strip_prefix("error:"))
+        .unwrap_or(error_line)
+        .trim();
+
+    let lower = cleaned.to_ascii_lowercase();
+    if lower.contains("sign in to confirm you") || lower.contains("not a bot") {
+        return "YouTube solicitó verificación antibot/sesión para este video. Abre YouTube en tu navegador habitual para validar tu sesión o red, e inténtalo de nuevo.".to_string();
+    }
+    if lower.contains("private video") {
+        return "Este video es privado y no puede cargarse sin acceso autorizado.".to_string();
+    }
+    if lower.contains("video unavailable") || lower.contains("has been removed") || lower.contains("no longer available") {
+        return "El video no está disponible o fue eliminado de la plataforma.".to_string();
+    }
+    if lower.contains("age") && (lower.contains("sign in") || lower.contains("confirm your age")) {
+        return "Este video tiene restricción de edad y requiere autenticación en la plataforma.".to_string();
+    }
+    if lower.contains("premieres in") || lower.contains("live event will begin") {
+        return "Este estreno o directo programado aún no ha comenzado.".to_string();
+    }
+    if lower.contains("unsupported url") {
+        return "La URL introducida no corresponde a un enlace de video compatible.".to_string();
+    }
+    if lower.contains("getaddrinfo") || lower.contains("timed out") || lower.contains("unable to download webpage") || lower.contains("connection") {
+        return format!("Error de conexión al consultar el video ({cleaned}). Verifica tu internet e inténtalo de nuevo.");
+    }
+    if lower.contains("signature") || lower.contains("nsig") || lower.contains("unable to extract") || lower.contains("js challenge") {
+        return format!("El extractor de yt-dlp necesita actualizarse para este video ({cleaned}). Abre Ajustes → Motores y pulsa Actualizar.");
+    }
+
+    cleaned.to_string()
+}
+
+fn select_best_resolution_candidates<'a>(
+    mp4_cands: &'a [StreamCandidate],
+    webm_cands: &'a [StreamCandidate],
+    height: u32,
+) -> (Option<&'a StreamCandidate>, Option<&'a StreamCandidate>) {
+    // Primary playback stream preference for WebView2:
+    // 1. Direct HTTPS MP4 non-AV1 (H.264 avc1 / VP9 in MP4)
+    // 2. Direct HTTPS WebM VP9 (crucial for 1440p/2160p where MP4 only has AV1 or HLS)
+    // 3. Direct HTTPS MP4 AV1
+    // 4. HLS MP4
+    let best_mp4 = mp4_cands
+        .iter()
+        .filter(|c| c.height == Some(height) && !c.is_hls && !c.is_av1)
+        .max_by_key(|c| c.score)
+        .or_else(|| {
+            webm_cands
+                .iter()
+                .filter(|c| c.height == Some(height) && !c.is_hls && !c.is_av1)
+                .max_by_key(|c| c.score)
+        })
+        .or_else(|| {
+            mp4_cands
+                .iter()
+                .filter(|c| c.height == Some(height) && !c.is_hls)
+                .max_by_key(|c| c.score)
+        })
+        .or_else(|| {
+            mp4_cands
+                .iter()
+                .filter(|c| c.height == Some(height))
+                .max_by_key(|c| (!c.is_av1, c.score))
+        });
+
+    let best_webm = webm_cands
+        .iter()
+        .filter(|c| c.height == Some(height) && !c.is_hls && !c.is_av1)
+        .max_by_key(|c| c.score)
+        .or_else(|| {
+            webm_cands
+                .iter()
+                .filter(|c| c.height == Some(height) && !c.is_hls)
+                .max_by_key(|c| c.score)
+        })
+        .or_else(|| {
+            webm_cands
+                .iter()
+                .filter(|c| c.height == Some(height))
+                .max_by_key(|c| (!c.is_av1, c.score))
+        });
+
+    (best_mp4, best_webm)
+}
+
+async fn register_candidate_stream(
+    proxy_port: u16,
+    cand: &StreamCandidate,
+    is_audio: bool,
+) -> String {
+    if cand.is_hls {
+        register_hls_proxy_stream(proxy_port, cand.url.clone(), cand.ua.clone(), is_audio).await
+    } else {
+        register_proxy_stream(
+            proxy_port,
+            cand.url.clone(),
+            cand.ua.clone(),
+            cand.content_type.clone(),
+            is_audio,
+        )
+        .await
+    }
 }
 
 fn compute_preview_video_score(
@@ -3157,7 +3333,7 @@ fn emit_video_load_progress(app: &AppHandle, percent: f64, message: &str) {
 
 #[tauri::command]
 pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetadata, String> {
-    let trimmed_url = url.trim().to_string();
+    let trimmed_url = sanitize_input_url(&url);
     if trimmed_url.is_empty() {
         return Err("Introduce una URL de video válida.".to_string());
     }
@@ -3167,8 +3343,12 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
     let ytdlp = ensure_ytdlp_ready()?;
     emit_video_load_progress(&app, 8.0, "Conectando con yt-dlp...");
     let output = hidden_tokio_command(&ytdlp)
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1")
         .args(crate::binary_manager::js_runtime_args())
         .args([
+            "--encoding",
+            "utf-8",
             "--dump-single-json",
             "--no-playlist",
             "--no-warnings",
@@ -3181,16 +3361,22 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let msg = stderr
-            .lines()
-            .rfind(|l| !l.trim().is_empty())
-            .unwrap_or("No se pudo analizar la URL.")
-            .to_string();
-        return Err(msg);
+        return Err(extract_friendly_ytdlp_error(&stderr));
     }
 
-    let json: Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Error leyendo metadatos JSON de yt-dlp: {e}"))?;
+    let raw_json = parse_ytdlp_json_stdout(&output.stdout)?;
+    let json: Value = if raw_json["formats"].as_array().is_none() {
+        if let Some(first_entry) = raw_json["entries"]
+            .as_array()
+            .and_then(|arr| arr.iter().find(|item| !item.is_null()))
+        {
+            first_entry.clone()
+        } else {
+            raw_json
+        }
+    } else {
+        raw_json
+    };
     emit_video_load_progress(&app, 45.0, "Procesando formatos y capítulos...");
 
     let id = json["id"].as_str().unwrap_or("video").to_string();
@@ -3311,6 +3497,7 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
 
             if is_direct_http && !stream_url.is_empty() {
                 let h_score = height.unwrap_or(0) as u64;
+                let is_av1 = vcodec.starts_with("av01");
                 if has_video && has_audio {
                     let ext_bonus = if ext == "mp4" { 10_000 } else { 0 };
                     combined_cands.push(StreamCandidate {
@@ -3323,6 +3510,8 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                             "video/mp4".to_string()
                         },
                         height,
+                        is_hls: false,
+                        is_av1,
                     });
                 } else if has_video && !has_audio {
                     let score = compute_preview_video_score(
@@ -3335,21 +3524,23 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                             ua: stream_ua.clone(),
                             content_type: "video/mp4".to_string(),
                             height,
+                            is_hls: false,
+                            is_av1,
                         });
                         let alt_short = match (width, height) {
                             (Some(w), Some(hh)) if w > 0 && hh > 0 => w.min(hh),
                             _ => height.unwrap_or(0),
                         };
-                        if vcodec.starts_with("av01")
-                            || (vcodec.starts_with("avc1") && alt_short <= 480)
-                        {
-                            let alt_bonus = if vcodec.starts_with("av01") { 100_000 } else { 0 };
+                        if is_av1 || (vcodec.starts_with("avc1") && alt_short <= 480) {
+                            let alt_bonus = if is_av1 { 100_000 } else { 0 };
                             video_alt_cands.push(StreamCandidate {
                                 score: score + alt_bonus,
                                 url: stream_url.to_string(),
                                 ua: stream_ua,
                                 content_type: "video/mp4".to_string(),
                                 height,
+                                is_hls: false,
+                                is_av1,
                             });
                         }
                     } else if ext == "webm" {
@@ -3359,6 +3550,8 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                             ua: stream_ua,
                             content_type: "video/webm".to_string(),
                             height,
+                            is_hls: false,
+                            is_av1,
                         });
                     }
                 } else if has_audio && !has_video {
@@ -3370,6 +3563,8 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                             ua: stream_ua.clone(),
                             content_type: "audio/mp4".to_string(),
                             height: None,
+                            is_hls: false,
+                            is_av1: false,
                         });
                     } else if ext == "webm" || ext == "opus" {
                         fallback_audio_cands.push(StreamCandidate {
@@ -3378,6 +3573,8 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                             ua: stream_ua.clone(),
                             content_type: "audio/webm".to_string(),
                             height: None,
+                            is_hls: false,
+                            is_av1: false,
                         });
                     }
 
@@ -3429,6 +3626,7 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                 }
             } else if is_hls && !stream_url.is_empty() {
                 let h_score = height.unwrap_or(0) as u64;
+                let is_av1 = vcodec.starts_with("av01");
                 if has_video && !has_audio {
                     let is_vp9 =
                         ext == "webm" || vcodec.starts_with("vp9") || vcodec.starts_with("vp09");
@@ -3442,6 +3640,8 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                             ua: stream_ua,
                             content_type: "application/vnd.apple.mpegurl".to_string(),
                             height,
+                            is_hls: true,
+                            is_av1,
                         });
                     } else {
                         let score = compute_preview_video_score(
@@ -3453,6 +3653,8 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                             ua: stream_ua,
                             content_type: "application/vnd.apple.mpegurl".to_string(),
                             height,
+                            is_hls: true,
+                            is_av1,
                         });
                     }
                 } else if has_video && has_audio {
@@ -3462,6 +3664,8 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                         ua: stream_ua,
                         content_type: "application/vnd.apple.mpegurl".to_string(),
                         height,
+                        is_hls: true,
+                        is_av1,
                     });
                 } else if has_audio && !has_video {
                     let note_lower = format_note.to_lowercase();
@@ -3492,6 +3696,8 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                         ua: stream_ua,
                         content_type: "application/vnd.apple.mpegurl".to_string(),
                         height: None,
+                        is_hls: true,
+                        is_av1: false,
                     });
                 }
             } else if is_dash_segments && (ext == "mp4" || ext == "m4a") {
@@ -3506,6 +3712,7 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                             fragments: frag_urls,
                             ua: stream_ua,
                             duration_secs: duration,
+                            height,
                         });
                     } else if has_audio && !has_video {
                         let tbr_score = tbr.unwrap_or(0.0).round() as u64;
@@ -3523,6 +3730,7 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
                             fragments: frag_urls.clone(),
                             ua: stream_ua.clone(),
                             duration_secs: duration,
+                            height: None,
                         });
 
                         let should_replace = dash_audio_tracks
@@ -3739,6 +3947,11 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
 
     // Fallback to synthesized VOD fMP4 HLS playlists for `http_dash_segments` videos
     // (such as Post-Live Manifestless broadcasts where direct HTTPS/M3U8 streams do not exist).
+    let dash_hls_backup = if !dash_hls_mp4_cands.is_empty() {
+        Some(dash_hls_mp4_cands.clone())
+    } else {
+        None
+    };
     if preview_stream_url.is_none() && !dash_hls_mp4_cands.is_empty() {
         let dash_mp4_url = pick_and_register_dash_hls_stream(proxy_port, dash_hls_mp4_cands, false).await;
         if let Some(url) = dash_mp4_url {
@@ -3781,19 +3994,6 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
 
     if preview_audio_url.is_none() && !dash_hls_audio_cands.is_empty() {
         preview_audio_url = pick_and_register_dash_hls_stream(proxy_port, dash_hls_audio_cands, true).await;
-    }
-
-    // Start background pre-caching only after all preview stream URLs have been selected
-    // and registered so background chunks cannot compete with stream probing.
-    if let Some(ref audio_url) = preview_audio_url {
-        if audio_url.contains("/stream/") {
-            precache_stream_by_url(audio_url).await;
-        }
-    }
-    if let Some(ref video_url) = preview_stream_url.as_ref().or(preview_webm_url.as_ref()) {
-        if video_url.contains("/stream/") {
-            precache_stream_by_url(video_url).await;
-        }
     }
 
     let embed_url = if webpage_url.contains("youtube.com") || webpage_url.contains("youtu.be") {
@@ -3870,47 +4070,24 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
     let mut preview_resolutions: Vec<crate::models::PreviewResolutionEntry> = Vec::new();
     let max_height = selected_heights.iter().next_back().copied().unwrap_or(1080);
     let descending_heights: Vec<u32> = selected_heights.into_iter().rev().collect();
+    let mut resolution_primary_cands: Vec<(usize, StreamCandidate)> = Vec::new();
 
     for h in descending_heights {
-        let best_mp4 = mp4_for_resolutions
-            .iter()
-            .filter(|c| c.height == Some(h))
-            .max_by_key(|c| c.score);
-        let best_webm = webm_for_resolutions
-            .iter()
-            .filter(|c| c.height == Some(h))
-            .max_by_key(|c| c.score);
+        let (best_mp4, best_webm) =
+            select_best_resolution_candidates(&mp4_for_resolutions, &webm_for_resolutions, h);
 
         if best_mp4.is_none() && best_webm.is_none() {
             continue;
         }
 
         let mut mp4_url = if let Some(cand) = best_mp4 {
-            Some(
-                register_proxy_stream(
-                    proxy_port,
-                    cand.url.clone(),
-                    cand.ua.clone(),
-                    cand.content_type.clone(),
-                    false,
-                )
-                .await,
-            )
+            Some(register_candidate_stream(proxy_port, cand, false).await)
         } else {
             None
         };
 
         let mut webm_url = if let Some(cand) = best_webm {
-            Some(
-                register_proxy_stream(
-                    proxy_port,
-                    cand.url.clone(),
-                    cand.ua.clone(),
-                    cand.content_type.clone(),
-                    false,
-                )
-                .await,
-            )
+            Some(register_candidate_stream(proxy_port, cand, false).await)
         } else {
             None
         };
@@ -3927,6 +4104,11 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
             format!("{h}p")
         };
 
+        let entry_idx = preview_resolutions.len();
+        if let Some(cand) = best_mp4.or(best_webm) {
+            resolution_primary_cands.push((entry_idx, (*cand).clone()));
+        }
+
         preview_resolutions.push(crate::models::PreviewResolutionEntry {
             label,
             height: h,
@@ -3935,8 +4117,64 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
         });
     }
 
-    // Default preview stream URL to the HIGHEST resolution available (top quality)
-    if let Some(top) = preview_resolutions.first() {
+    // Populate multi-resolution entries for `http_dash_segments` VODs if needed
+    if preview_resolutions.is_empty() {
+        if let Some(mut dash_cands) = dash_hls_backup {
+            dash_cands.sort_by(|a, b| {
+                b.height
+                    .unwrap_or(0)
+                    .cmp(&a.height.unwrap_or(0))
+                    .then_with(|| b.score.cmp(&a.score))
+            });
+            let mut seen_h: BTreeSet<u32> = BTreeSet::new();
+            let top_dash_h = dash_cands.iter().filter_map(|c| c.height).max().unwrap_or(1080);
+            for cand in dash_cands {
+                let h = cand.height.unwrap_or(1080);
+                if !seen_h.insert(h) {
+                    continue;
+                }
+                let u = register_dash_hls_proxy_stream(
+                    proxy_port,
+                    cand.fragments,
+                    cand.ua,
+                    false,
+                    cand.duration_secs,
+                )
+                .await;
+                let label = if h == top_dash_h {
+                    format!("{h}p (Máxima)")
+                } else {
+                    format!("{h}p")
+                };
+                preview_resolutions.push(crate::models::PreviewResolutionEntry {
+                    label,
+                    height: h,
+                    mp4_url: Some(u.clone()),
+                    webm_url: Some(u),
+                });
+            }
+        }
+    }
+
+    // Pick initial stream from top resolution, verifying direct candidate health via probe
+    let mut chosen_top_idx: usize = resolution_primary_cands
+        .first()
+        .map(|&(idx, _)| idx)
+        .unwrap_or(0);
+    if resolution_primary_cands.len() > 1 {
+        if let Some(&(_, ref cand0)) = resolution_primary_cands.first() {
+            if !cand0.is_hls && !probe_stream_ok(&cand0.url, &cand0.ua).await {
+                for &(idx_alt, ref cand_alt) in resolution_primary_cands.iter().skip(1).take(3) {
+                    if cand_alt.is_hls || probe_stream_ok(&cand_alt.url, &cand_alt.ua).await {
+                        chosen_top_idx = idx_alt;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(top) = preview_resolutions.get(chosen_top_idx).or_else(|| preview_resolutions.first()) {
         if let Some(ref u) = top.mp4_url {
             preview_stream_url = Some(u.clone());
         }
@@ -3952,6 +4190,18 @@ pub async fn fetch_video_info(app: AppHandle, url: String) -> Result<VideoMetada
             mp4_url: preview_stream_url.clone(),
             webm_url: preview_webm_url.clone(),
         });
+    }
+
+    // Start background pre-caching AFTER final stream selection so we precache the actual active streams
+    if let Some(ref audio_url) = preview_audio_url {
+        if audio_url.contains("/stream/") {
+            precache_stream_by_url(audio_url).await;
+        }
+    }
+    if let Some(ref video_url) = preview_stream_url.as_ref().or(preview_webm_url.as_ref()) {
+        if video_url.contains("/stream/") {
+            precache_stream_by_url(video_url).await;
+        }
     }
 
     emit_video_load_progress(&app, 80.0, "Iniciando reproductor...");
@@ -4694,10 +4944,99 @@ mod tests {
         assert!(get_cached_raw_video_json(&url).is_none());
     }
 
-    
+    #[test]
+    fn test_sanitize_input_url() {
+        assert_eq!(
+            sanitize_input_url("  \"https://www.youtube.com/watch?v=r6TZVz8Z1kM\"  "),
+            "https://www.youtube.com/watch?v=r6TZVz8Z1kM"
+        );
+        assert_eq!(
+            sanitize_input_url("Mira este video <https://youtu.be/dQw4w9WgXcQ?t=12> genial"),
+            "https://youtu.be/dQw4w9WgXcQ?t=12"
+        );
+        assert_eq!(sanitize_input_url("   "), "");
+    }
 
-    
+    #[test]
+    fn test_parse_ytdlp_json_stdout_handles_preamble() {
+        let raw = b"WARNING: [youtube] Something non-fatal\n{\"id\":\"vid1\",\"title\":\"Ok\",\"formats\":[]}\n";
+        let val = parse_ytdlp_json_stdout(raw).expect("should parse trailing JSON object");
+        assert_eq!(val["id"].as_str(), Some("vid1"));
+        assert_eq!(val["title"].as_str(), Some("Ok"));
+    }
 
-    
+    #[test]
+    fn test_extract_friendly_ytdlp_error() {
+        let bot_err = "WARNING: something\nERROR: [youtube] abc: Sign in to confirm you’re not a bot.\n";
+        let friendly = extract_friendly_ytdlp_error(bot_err);
+        assert!(friendly.contains("verificación antibot/sesión"));
+
+        let priv_err = "ERROR: [youtube] xyz: Private video. Sign in if you've been granted access";
+        assert!(extract_friendly_ytdlp_error(priv_err).contains("privado"));
+
+        let generic = "Traceback (most recent call last):\nERROR: [generic] Custom upstream failure";
+        assert_eq!(
+            extract_friendly_ytdlp_error(generic),
+            "[generic] Custom upstream failure"
+        );
+    }
+
+    #[test]
+    fn test_select_best_resolution_prefers_direct_non_av1_over_hls() {
+        let direct_h264 = StreamCandidate {
+            score: 120_000,
+            url: "https://direct/h264.mp4".to_string(),
+            ua: "ua".to_string(),
+            content_type: "video/mp4".to_string(),
+            height: Some(1080),
+            is_hls: false,
+            is_av1: false,
+        };
+        let hls_h264 = StreamCandidate {
+            score: 120_000,
+            url: "https://hls/playlist.m3u8".to_string(),
+            ua: "ua".to_string(),
+            content_type: "application/vnd.apple.mpegurl".to_string(),
+            height: Some(1080),
+            is_hls: true,
+            is_av1: false,
+        };
+        let direct_av1_1440 = StreamCandidate {
+            score: 5_000,
+            url: "https://direct/1440_av1.mp4".to_string(),
+            ua: "ua".to_string(),
+            content_type: "video/mp4".to_string(),
+            height: Some(1440),
+            is_hls: false,
+            is_av1: true,
+        };
+        let direct_vp9_1440 = StreamCandidate {
+            score: 105_000,
+            url: "https://direct/1440_vp9.webm".to_string(),
+            ua: "ua".to_string(),
+            content_type: "video/webm".to_string(),
+            height: Some(1440),
+            is_hls: false,
+            is_av1: false,
+        };
+        let hls_mp4_1440 = StreamCandidate {
+            score: 5_000,
+            url: "https://hls/1440.m3u8".to_string(),
+            ua: "ua".to_string(),
+            content_type: "application/vnd.apple.mpegurl".to_string(),
+            height: Some(1440),
+            is_hls: true,
+            is_av1: false,
+        };
+
+        let mp4s = vec![direct_h264, hls_h264, direct_av1_1440, hls_mp4_1440];
+        let webms = vec![direct_vp9_1440];
+
+        let (best_1080, _) = select_best_resolution_candidates(&mp4s, &webms, 1080);
+        assert_eq!(best_1080.unwrap().url, "https://direct/h264.mp4");
+
+        let (best_1440, _) = select_best_resolution_candidates(&mp4s, &webms, 1440);
+        assert_eq!(best_1440.unwrap().url, "https://direct/1440_vp9.webm");
+    }
 }
 

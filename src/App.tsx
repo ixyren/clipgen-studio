@@ -113,6 +113,8 @@ function buildBatchRequests(
   marginAfter: number,
   filenameFormat: "clean" | "full",
   clipStartIndex: number = 1,
+  preciseCut: boolean = false,
+  mergeClips: boolean = false,
   activeOptions?: ManualDownloadOptions
 ): ClipExportRequest[] {
   const groups = new Map<string, SavedClipEntry[]>();
@@ -145,8 +147,8 @@ function buildBatchRequests(
           notes: c.notes,
         };
       }),
-      merge_clips: first.merge_clips && group.length > 1,
-      precise_cut: first.precise_cut,
+      merge_clips: mergeClips && group.length > 1,
+      precise_cut: preciseCut,
       options: {
         ...first.options,
         ...(activeOptions
@@ -154,6 +156,7 @@ function buildBatchRequests(
               quality_preset: activeOptions.quality_preset,
               container: activeOptions.container,
               mode: activeOptions.mode,
+              audio_bitrate: activeOptions.audio_bitrate,
             }
           : {}),
         filename_format: filenameFormat,
@@ -225,6 +228,12 @@ export function App() {
   const [options, setOptions] = useState<ManualDownloadOptions>(DEFAULT_OPTIONS);
   const [jobs, setJobs] = useState<JobState[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<"export" | "engines">("export");
+
+  const openSettingsAtTab = useCallback((tab: "export" | "engines") => {
+    setSettingsInitialTab(tab);
+    setIsSettingsOpen(true);
+  }, []);
 
   // Clips for current active video
   const currentVideoClips = useMemo(() => {
@@ -233,13 +242,6 @@ export function App() {
       matchesMetadataVideo(entry, metadata, url)
     );
   }, [savedClips, metadata, url]);
-
-  // Sync selected clip IDs when clips are loaded or added
-  useEffect(() => {
-    if (savedClips.length > 0 && selectedClipIds.size === 0) {
-      setSelectedClipIds(new Set(savedClips.map((c) => c.id)));
-    }
-  }, [savedClips]);
 
   // Initial load: output directory, saved persistent clips, event listeners
   useEffect(() => {
@@ -665,6 +667,8 @@ export function App() {
       // Load new video
       setUrl(clip.video_url);
       setAnalyzing(true);
+      setAnalyzeProgress(4);
+      setAnalyzeMessage("Cargando video del clip...");
       setAnalyzeError(null);
       try {
         const data = await invoke<VideoMetadata>("fetch_video_info", {
@@ -678,7 +682,36 @@ export function App() {
           autoplay: true,
           nonce: Date.now(),
         });
+
+        setSavedClips((prev) =>
+          prev.map((c) => {
+            if (
+              c.video_url === clip.video_url ||
+              (data.webpage_url && c.video_url === data.webpage_url)
+            ) {
+              return {
+                ...c,
+                video_url: data.webpage_url || c.video_url,
+                video_id: data.id,
+                video_title: data.title,
+                video_thumbnail: data.thumbnail,
+                video_duration: data.duration,
+              };
+            }
+            return c;
+          })
+        );
+
+        const defaultTrack = data.audio_tracks[0] ?? null;
+        if (defaultTrack) {
+          setOptions((prev) => ({
+            ...prev,
+            audio_track_id: defaultTrack.track_id,
+            audio_format_id: defaultTrack.format_id,
+          }));
+        }
       } catch (err) {
+        setAnalyzeProgress(0);
         setAnalyzeError(`Error cargando video del clip: ${String(err)}`);
       } finally {
         setAnalyzing(false);
@@ -722,8 +755,16 @@ export function App() {
     setSavedClips((prev) =>
       prev.map((c) => {
         if (c.id !== id) return c;
-        const newStart = Math.max(0, c.start_time + startDelta);
-        const newEnd = Math.max(newStart + 0.1, c.end_time + endDelta);
+        const maxDur =
+          c.video_duration > 0 ? c.video_duration : Number.POSITIVE_INFINITY;
+        const newStart = Math.max(
+          0,
+          Math.min(maxDur - 0.1, c.start_time + startDelta)
+        );
+        const newEnd = Math.min(
+          maxDur,
+          Math.max(newStart + 0.1, c.end_time + endDelta)
+        );
         return {
           ...c,
           start_time: newStart,
@@ -891,6 +932,8 @@ export function App() {
       marginAfter,
       filenameFormat,
       clipStartIndex,
+      preciseCut,
+      mergeClips,
       options
     );
     try {
@@ -948,7 +991,8 @@ export function App() {
         onAnalyze={handleAnalyze}
         analyzing={analyzing}
         binaryStatus={binaryStatus}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={() => openSettingsAtTab("export")}
+        onOpenEngines={() => openSettingsAtTab("engines")}
         error={analyzeError}
         onDismissError={() => setAnalyzeError(null)}
         onOpenTranscription={() => setIsTranscriptionOpen(true)}
@@ -1029,6 +1073,7 @@ export function App() {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+        initialTab={settingsInitialTab}
         options={options}
         onOptionsChange={handleOptionsChange}
         onPickFolder={handlePickFolder}

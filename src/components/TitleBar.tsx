@@ -27,10 +27,18 @@ interface TitleBarProps {
   analyzing: boolean;
   binaryStatus: BinaryStatus | null;
   onOpenSettings: () => void;
+  onOpenEngines?: () => void;
   error: string | null;
   onDismissError?: () => void;
   onOpenTranscription: () => void;
   onCopyAiPrompt: () => void;
+}
+
+function sanitizeUrlInput(raw: string): string {
+  const trimmed = raw.trim();
+  const match = trimmed.match(/https?:\/\/\S+/);
+  const candidate = match ? match[0] : trimmed;
+  return candidate.replace(/^["'<(\[]+|[)"'>\],;]+$/g, "");
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -40,6 +48,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   analyzing,
   binaryStatus,
   onOpenSettings,
+  onOpenEngines,
   error,
   onDismissError,
   onOpenTranscription,
@@ -48,6 +57,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const [isMaximized, setIsMaximized] = useState(false);
   const [pasteNotice, setPasteNotice] = useState(false);
   const [promptCopied, setPromptCopied] = useState(false);
+  const [errorCopied, setErrorCopied] = useState(false);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -169,7 +179,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     try {
       const text = await navigator.clipboard.readText();
       if (text && text.trim()) {
-        const cleaned = text.trim();
+        const cleaned = sanitizeUrlInput(text);
+        if (!cleaned) return;
         onUrlChange(cleaned);
         setPasteNotice(true);
         setTimeout(() => setPasteNotice(false), 1200);
@@ -198,6 +209,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const enginesReady =
     Boolean(binaryStatus?.ytdlp_installed) &&
     Boolean(binaryStatus?.ffmpeg_installed);
+  const hasUpdates =
+    Boolean(binaryStatus?.ytdlp_update_available) ||
+    Boolean(binaryStatus?.ffmpeg_update_available);
 
   return (
     <header
@@ -222,7 +236,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             STUDIO
           </span>
           <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[9px] font-semibold text-slate-400">
-            v0.2.0
+            v0.2.1
           </span>
         </div>
       </div>
@@ -289,7 +303,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               whileTap={{ scale: 0.98 }}
               type="button"
               onClick={onOpenTranscription}
-              disabled={analyzing || !url.trim()}
+              disabled={analyzing}
               className="flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 hover:text-white smooth-btn disabled:cursor-not-allowed disabled:opacity-40 shrink-0"
             >
               <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
@@ -329,21 +343,25 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <Tooltip
           side="bottom"
           content={
-            enginesReady
-              ? "Ajustes de exportación · Motores yt-dlp y FFmpeg listos"
-              : "Ajustes de exportación · Verificando o actualizando motores..."
+            !enginesReady
+              ? "Ajustes · Verificando o instalando motores..."
+              : hasUpdates
+              ? "Actualización disponible para yt-dlp / FFmpeg (clic para instalar)"
+              : "Ajustes de exportación · Motores yt-dlp y FFmpeg al día"
           }
         >
           <button
             type="button"
-            onClick={onOpenSettings}
+            onClick={hasUpdates && onOpenEngines ? onOpenEngines : onOpenSettings}
             className="flex h-8 items-center gap-2 rounded-lg border border-white/10 bg-[#18181C] px-2.5 text-slate-300 hover:border-white/20 hover:text-white smooth-btn"
           >
             <div
               className={`h-2 w-2 rounded-full ${
-                enginesReady
-                  ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
-                  : "bg-amber-400 animate-pulse"
+                !enginesReady
+                  ? "bg-amber-400 animate-pulse"
+                  : hasUpdates
+                  ? "bg-sky-400 animate-pulse shadow-[0_0_8px_rgba(56,189,248,0.85)]"
+                  : "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
               }`}
             />
             <Settings2 className="h-3.5 w-3.5" />
@@ -393,19 +411,61 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute left-1/2 top-14 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-rose-500/40 bg-[#18181C] px-4 py-2 text-xs text-rose-200 shadow-2xl backdrop-blur-xl"
+            className="absolute left-1/2 top-14 z-50 flex w-max max-w-xl items-start gap-2.5 -translate-x-1/2 rounded-xl border border-rose-500/40 bg-[#18181C]/95 px-4 py-2.5 text-xs text-rose-200 shadow-2xl backdrop-blur-xl"
           >
-            <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
-            <span className="truncate max-w-md">{error}</span>
-            {onDismissError && (
-              <button
-                type="button"
-                onClick={onDismissError}
-                className="ml-2 rounded p-0.5 hover:bg-white/10 text-slate-400 hover:text-white"
+            <AlertTriangle className="mt-0.5 h-4 w-4 text-rose-400 shrink-0" />
+            <span className="flex-1 leading-relaxed select-text break-words">
+              {error}
+            </span>
+            <div className="flex items-center gap-1 shrink-0">
+              {(hasUpdates ||
+                /yt-dlp|extractor|signature|nsig/i.test(error)) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onOpenEngines) onOpenEngines();
+                      else onOpenSettings();
+                    }}
+                    className="flex items-center gap-1 rounded-lg border border-sky-500/30 bg-sky-500/15 px-2 py-1 text-[10px] font-semibold text-sky-300 hover:bg-sky-500/25 hover:text-white smooth-btn"
+                  >
+                    <span>Actualizar motores</span>
+                    <ArrowRight className="h-3 w-3" />
+                  </button>
+                )}
+              <Tooltip
+                side="bottom"
+                content={errorCopied ? "Copiado" : "Copiar detalle del error"}
               >
-                <X className="h-3 w-3" />
-              </button>
-            )}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(error);
+                      setErrorCopied(true);
+                      setTimeout(() => setErrorCopied(false), 1500);
+                    } catch {
+                      // Clipboard unavailable
+                    }
+                  }}
+                  className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white smooth-btn"
+                >
+                  {errorCopied ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </Tooltip>
+              {onDismissError && (
+                <button
+                  type="button"
+                  onClick={onDismissError}
+                  className="rounded p-1 hover:bg-white/10 text-slate-400 hover:text-white smooth-btn"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

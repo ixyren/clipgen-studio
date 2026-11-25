@@ -174,7 +174,7 @@ fn save_manifest(manifest: &VersionsManifest) {
 
 fn build_http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent("ClipGen-Studio/0.1.0")
+        .user_agent(concat!("ClipGen-Studio/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|e| format!("Error creando cliente HTTP: {e}"))

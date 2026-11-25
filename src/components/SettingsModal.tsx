@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -10,6 +10,8 @@ import {
   RefreshCw,
   Film,
   Info,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import type {
   BinaryStatus,
@@ -33,6 +35,7 @@ interface SettingsModalProps {
   onInstallUpdates: () => void;
   binaryProgress?: Record<string, BinaryUpdateProgress>;
   metadata?: VideoMetadata | null;
+  initialTab?: "export" | "engines";
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -47,14 +50,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   updatingBinaries,
   onCheckUpdates,
   onInstallUpdates,
+  binaryProgress = {},
+  initialTab = "export",
 }) => {
-  const [activeTab, setActiveTab] = useState<"export" | "engines">("export");
+  const [activeTab, setActiveTab] = useState<"export" | "engines">(initialTab);
+
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   const ytdlpReady = Boolean(binaryStatus?.ytdlp_installed);
   const ffmpegReady = Boolean(binaryStatus?.ffmpeg_installed);
   const hasUpdates =
     Boolean(binaryStatus?.ytdlp_update_available) ||
     Boolean(binaryStatus?.ffmpeg_update_available);
+
+  const ytdlpProg = binaryProgress["yt-dlp"];
+  const ffmpegProg = binaryProgress["ffmpeg"];
 
   return (
     <AnimatePresence>
@@ -87,7 +101,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-white">Ajustes</h3>
                   <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-400">
-                    v0.2.0
+                    v0.2.1
                   </span>
                 </div>
               </div>
@@ -125,7 +139,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               >
                 <span>Motores</span>
                 {hasUpdates && (
-                  <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="h-2 w-2 rounded-full bg-sky-400 animate-pulse" />
                 )}
               </button>
             </div>
@@ -188,12 +202,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         }
                         className="w-full rounded-xl border border-white/10 bg-[#18181C] px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
                       >
-                        <option value="best">Máxima (Original)</option>
-                        <option value="2160">4K UHD (2160p)</option>
-                        <option value="1440">2K QHD (1440p)</option>
-                        <option value="1080">1080p FHD</option>
-                        <option value="720">720p HD</option>
-                        <option value="480">480p</option>
+                        <option value="best" className="bg-[#18181C] text-white">Máxima (Original)</option>
+                        <option value="2160" className="bg-[#18181C] text-white">4K UHD (2160p)</option>
+                        <option value="1440" className="bg-[#18181C] text-white">2K QHD (1440p)</option>
+                        <option value="1080" className="bg-[#18181C] text-white">1080p FHD</option>
+                        <option value="720" className="bg-[#18181C] text-white">720p HD</option>
+                        <option value="480" className="bg-[#18181C] text-white">480p</option>
+                        <option value="360" className="bg-[#18181C] text-white">360p</option>
                       </select>
                     </div>
 
@@ -216,10 +231,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         }
                         className="w-full rounded-xl border border-white/10 bg-[#18181C] px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
                       >
-                        <option value="mp4">MP4 (Recomendado)</option>
-                        <option value="mkv">MKV (Matroska)</option>
-                        <option value="webm">WebM</option>
-                        <option value="mov">MOV (QuickTime)</option>
+                        <option value="mp4" className="bg-[#18181C] text-white">MP4 (Recomendado)</option>
+                        <option value="mkv" className="bg-[#18181C] text-white">MKV (Matroska)</option>
+                        <option value="webm" className="bg-[#18181C] text-white">WebM</option>
+                        <option value="mov" className="bg-[#18181C] text-white">MOV (QuickTime)</option>
                       </select>
                     </div>
                   </div>
@@ -245,9 +260,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         }
                         className="w-full rounded-xl border border-white/10 bg-[#18181C] px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
                       >
-                        <option value="video_audio">Video + Audio</option>
-                        <option value="audio_only">Solo Audio</option>
-                        <option value="video_only">Solo Video</option>
+                        <option value="video_audio" className="bg-[#18181C] text-white">Video + Audio</option>
+                        <option value="audio_only" className="bg-[#18181C] text-white">Solo Audio</option>
+                        <option value="video_only" className="bg-[#18181C] text-white">Solo Video</option>
                       </select>
                     </div>
 
@@ -270,35 +285,76 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         }
                         className="w-full rounded-xl border border-white/10 bg-[#18181C] px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
                       >
-                        <option value="320K">320 kbps (Máximo)</option>
-                        <option value="192K">192 kbps (Estándar)</option>
-                        <option value="128K">128 kbps (Compacto)</option>
+                        <option value="320K" className="bg-[#18181C] text-white">320 kbps (Máximo)</option>
+                        <option value="192K" className="bg-[#18181C] text-white">192 kbps (Estándar)</option>
+                        <option value="128K" className="bg-[#18181C] text-white">128 kbps (Compacto)</option>
                       </select>
                     </div>
                   </div>
                 </>
               ) : (
-                /* Compact Engines status */
+                /* Compact Engines status with live update badges & progress */
                 <div className="space-y-2.5">
                   <Tooltip
                     className="block w-full"
                     content="Extractor de streams de alto rendimiento para YouTube, Twitch y otras plataformas"
                   >
-                    <div className="flex items-center justify-between rounded-xl border border-white/10 bg-[#18181C] px-3.5 py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <DownloadCloud className="h-4 w-4 text-indigo-400" />
-                        <span className="text-xs font-bold text-white">yt-dlp</span>
+                    <div className="rounded-xl border border-white/10 bg-[#18181C] px-3.5 py-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <DownloadCloud className="h-4 w-4 text-indigo-400" />
+                          <span className="text-xs font-bold text-white">yt-dlp</span>
+                        </div>
+                        {ytdlpReady ? (
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1 font-mono text-[11px] font-semibold text-emerald-400">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              v{binaryStatus?.ytdlp_version || "Listo"}
+                            </span>
+                            {binaryStatus?.ytdlp_update_available &&
+                              binaryStatus.ytdlp_latest && (
+                                <span className="rounded bg-sky-500/20 border border-sky-400/35 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-sky-300">
+                                  → v{binaryStatus.ytdlp_latest}
+                                </span>
+                              )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] font-semibold text-amber-400">
+                            No instalado
+                          </span>
+                        )}
                       </div>
-                      {ytdlpReady ? (
-                        <span className="flex items-center gap-1 font-mono text-[11px] font-semibold text-emerald-400">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          v{binaryStatus?.ytdlp_version || "Listo"}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-semibold text-amber-400">
-                          No instalado
-                        </span>
-                      )}
+
+                      {ytdlpProg &&
+                        ytdlpProg.stage !== "ready" && (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[10px] text-slate-400">
+                              <span className="flex items-center gap-1 truncate">
+                                {ytdlpProg.stage === "error" ? (
+                                  <AlertCircle className="h-3 w-3 text-rose-400 shrink-0" />
+                                ) : (
+                                  <Loader2 className="h-3 w-3 animate-spin text-indigo-400 shrink-0" />
+                                )}
+                                {ytdlpProg.message}
+                              </span>
+                              <span className="font-mono tabular-nums text-indigo-300 shrink-0">
+                                {Math.round(ytdlpProg.percent)}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/60">
+                              <div
+                                className={`h-full transition-all duration-200 ${
+                                  ytdlpProg.stage === "error"
+                                    ? "bg-rose-500"
+                                    : "bg-indigo-500"
+                                }`}
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, ytdlpProg.percent))}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
                     </div>
                   </Tooltip>
 
@@ -306,21 +362,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     className="block w-full"
                     content="Motor de recorte de fotograma preciso, unión de clips y remuxing en caliente"
                   >
-                    <div className="flex items-center justify-between rounded-xl border border-white/10 bg-[#18181C] px-3.5 py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <Film className="h-4 w-4 text-violet-400" />
-                        <span className="text-xs font-bold text-white">FFmpeg</span>
+                    <div className="rounded-xl border border-white/10 bg-[#18181C] px-3.5 py-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <Film className="h-4 w-4 text-violet-400" />
+                          <span className="text-xs font-bold text-white">FFmpeg</span>
+                        </div>
+                        {ffmpegReady ? (
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1 font-mono text-[11px] font-semibold text-emerald-400">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              {binaryStatus?.ffmpeg_version || "Listo"}
+                            </span>
+                            {binaryStatus?.ffmpeg_update_available &&
+                              binaryStatus.ffmpeg_latest && (
+                                <span className="rounded bg-sky-500/20 border border-sky-400/35 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-sky-300">
+                                  → {binaryStatus.ffmpeg_latest}
+                                </span>
+                              )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] font-semibold text-amber-400">
+                            No instalado
+                          </span>
+                        )}
                       </div>
-                      {ffmpegReady ? (
-                        <span className="flex items-center gap-1 font-mono text-[11px] font-semibold text-emerald-400">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          {binaryStatus?.ffmpeg_version || "Listo"}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-semibold text-amber-400">
-                          No instalado
-                        </span>
-                      )}
+
+                      {ffmpegProg &&
+                        ffmpegProg.stage !== "ready" && (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[10px] text-slate-400">
+                              <span className="flex items-center gap-1 truncate">
+                                {ffmpegProg.stage === "error" ? (
+                                  <AlertCircle className="h-3 w-3 text-rose-400 shrink-0" />
+                                ) : (
+                                  <Loader2 className="h-3 w-3 animate-spin text-violet-400 shrink-0" />
+                                )}
+                                {ffmpegProg.message}
+                              </span>
+                              <span className="font-mono tabular-nums text-violet-300 shrink-0">
+                                {Math.round(ffmpegProg.percent)}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/60">
+                              <div
+                                className={`h-full transition-all duration-200 ${
+                                  ffmpegProg.stage === "error"
+                                    ? "bg-rose-500"
+                                    : "bg-violet-500"
+                                }`}
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, ffmpegProg.percent))}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
                     </div>
                   </Tooltip>
 
@@ -343,7 +440,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       disabled={updatingBinaries}
                       className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500 smooth-btn shadow-md shadow-indigo-500/25 disabled:opacity-40"
                     >
-                      <span>Actualizar / Reinstalar</span>
+                      {updatingBinaries && (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      )}
+                      <span>
+                        {updatingBinaries
+                          ? "Actualizando..."
+                          : hasUpdates
+                          ? "Instalar actualización"
+                          : "Actualizar / Reinstalar"}
+                      </span>
                     </button>
                   </div>
                 </div>

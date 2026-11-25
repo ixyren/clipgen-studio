@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Hls from "hls.js";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Play,
   Pause,
@@ -156,6 +156,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
   const [loadLabel, setLoadLabel] = useState("Cargando video...");
   const [showLoadOverlay, setShowLoadOverlay] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [mediaDuration, setMediaDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [loopSelection, setLoopSelection] = useState(false);
@@ -188,7 +189,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
   const totalQueueCount = allClips ? allClips.length : clips.length;
   const nextDefaultClipNumber = clipStartIndex + totalQueueCount;
 
-  const duration = Math.max(metadata?.duration || 1, 1);
+  const duration = Math.max(metadata?.duration || mediaDuration || 1, 1);
   const maxZoom = Math.max(500, Math.min(2500, Math.ceil(duration / 2)));
   const selectionDuration = Math.max(0, activeEnd - activeStart);
 
@@ -294,6 +295,10 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
   const loadHideTimerRef = useRef<number | null>(null);
   const prevMetadataRef = useRef<VideoMetadata | null>(metadata);
   const awaitingInitialStreamRef = useRef(false);
+  const errorRecoveryAttemptsRef = useRef(0);
+  const lastUiTimeRef = useRef(0);
+  const hoverRafRef = useRef<number | null>(null);
+  const pendingHoverRef = useRef<{ time: number; pct: number } | null>(null);
 
   // Reset zoom, pan & playback state when metadata changes
   useEffect(() => {
@@ -305,6 +310,9 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
     setReloadNonce(0);
     setTrimPreview(null);
     setBufferedRanges([]);
+    setMediaDuration(0);
+    errorRecoveryAttemptsRef.current = 0;
+    lastUiTimeRef.current = 0;
     wantPlayRef.current = false;
     pendingResolutionRestoreTimeRef.current = null;
     queuedSeekTimeRef.current = null;
@@ -329,13 +337,20 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
     }
 
     if (metadata.preview_resolutions && metadata.preview_resolutions.length > 0) {
-      setSelectedResolution(metadata.preview_resolutions[0].label);
+      const matched = metadata.preview_resolutions.find(
+        (r) =>
+          (metadata.preview_stream_url && r.mp4_url === metadata.preview_stream_url) ||
+          (metadata.preview_webm_url && r.webm_url === metadata.preview_webm_url)
+      );
+      setSelectedResolution(matched?.label || metadata.preview_resolutions[0].label);
     } else {
       setSelectedResolution("Máxima");
     }
 
+    errorRecoveryAttemptsRef.current = 0;
     setStreamError(false);
     setCurrentTime(0);
+    lastUiTimeRef.current = 0;
     setIsPlaying(false);
   }, [metadata?.id, metadata?.preview_stream_url, metadata?.preview_webm_url]);
 
@@ -623,12 +638,23 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
   }, [showLoadOverlay]);
 
   useEffect(() => {
+    if (!isLoadingStream || isAnalyzing || playerMode === "embed") return;
+    const timer = window.setTimeout(() => {
+      setIsLoadingStream(false);
+    }, 18000);
+    return () => window.clearTimeout(timer);
+  }, [isLoadingStream, isAnalyzing, playerMode, activeStreamUrl]);
+
+  useEffect(() => {
     return () => {
       if (pendingSeekTimerRef.current !== null) {
         window.clearTimeout(pendingSeekTimerRef.current);
       }
       if (loadHideTimerRef.current !== null) {
         window.clearTimeout(loadHideTimerRef.current);
+      }
+      if (hoverRafRef.current !== null) {
+        window.cancelAnimationFrame(hoverRafRef.current);
       }
     };
   }, []);
@@ -643,11 +669,39 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
     pendingResolutionRestoreTimeRef.current = v ? v.currentTime : currentTime;
     if (v) v.pause();
     if (a) a.pause();
+    errorRecoveryAttemptsRef.current = 0;
+    setStreamError(false);
     setIsPlaying(false);
     setLoadLabel(`Cambiando a ${newRes}...`);
     setIsLoadingStream(true);
     setSelectedResolution(newRes);
   };
+
+  const handleModeSwitch = useCallback(
+    (nextMode: PlayerSourceMode) => {
+      if (nextMode === playerMode && !streamError) return;
+      const v = videoRef.current;
+      const a = audioRef.current;
+      const shouldResume = wantPlayRef.current || Boolean(v && !v.paused);
+      wantPlayRef.current = nextMode === "embed" ? false : shouldResume;
+      if (playerMode !== "embed" && nextMode !== "embed") {
+        pendingResolutionRestoreTimeRef.current = v ? v.currentTime : currentTime;
+      }
+      if (v) v.pause();
+      if (a) a.pause();
+      errorRecoveryAttemptsRef.current = 0;
+      setIsPlaying(false);
+      setStreamError(false);
+      if (nextMode === "embed") {
+        setIsLoadingStream(false);
+      } else {
+        setLoadLabel(`Cambiando a ${nextMode.toUpperCase()}...`);
+        setIsLoadingStream(true);
+      }
+      setPlayerMode(nextMode);
+    },
+    [playerMode, streamError, currentTime]
+  );
 
   // Video / HLS Stream Attachment & Cleanup
   useEffect(() => {
@@ -1329,7 +1383,10 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
           return;
         }
         const t = v.currentTime;
-        setCurrentTime(t);
+        if (Math.abs(t - lastUiTimeRef.current) >= 0.03) {
+          lastUiTimeRef.current = t;
+          setCurrentTime(t);
+        }
         if (followPlayheadRef.current && !dragModeRef.current) {
           const targetStart = computeCenteredViewStart(
             t,
@@ -2075,20 +2132,35 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
       {/* ── 1. Video Player Viewport ── */}
       <div className="relative flex-1 min-h-[240px] w-full overflow-hidden rounded-xl border border-white/10 bg-[#09090B] shadow-inner flex items-center justify-center">
         {!metadata ? (
-          <div className="flex flex-col items-center justify-center text-center p-8 max-w-md">
-            <div className="relative mb-4 flex h-20 w-20 items-center justify-center rounded-2xl border border-indigo-500/20 bg-indigo-500/10 text-indigo-400 shadow-2xl shadow-indigo-500/10">
+          <div className="flex flex-col items-center justify-center text-center p-8 max-w-md space-y-4">
+            <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl border border-indigo-500/20 bg-indigo-500/10 text-indigo-400 shadow-2xl shadow-indigo-500/10">
               <Film className="h-10 w-10 opacity-80" />
               <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white shadow-md">
                 +
               </div>
             </div>
-            <h2 className="text-base font-semibold text-white">
-              Ningún stream cargado
-            </h2>
-            <p className="mt-1.5 text-xs text-slate-400 leading-relaxed">
-              Pega un enlace de YouTube / Twitch o importa un JSON para recortar
-              clips con precisión.
-            </p>
+            <div>
+              <h2 className="text-base font-semibold text-white">
+                Ningún stream cargado
+              </h2>
+              <p className="mt-1.5 text-xs text-slate-400 leading-relaxed">
+                Pega un enlace de YouTube / Twitch arriba o importa un JSON en la cola para recortar clips con precisión.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-[10px] text-slate-400">
+              <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 font-mono">
+                <strong className="text-indigo-300">Espacio</strong> Play
+              </span>
+              <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 font-mono">
+                <strong className="text-indigo-300">I / O</strong> Marcar
+              </span>
+              <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 font-mono">
+                <strong className="text-indigo-300">Enter</strong> Añadir
+              </span>
+              <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 font-mono">
+                <strong className="text-indigo-300">Shift Izq</strong> Arrastre fino
+              </span>
+            </div>
           </div>
         ) : (
           <>
@@ -2101,15 +2173,26 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                   muted={muted || hasAudioTrack}
                   playsInline
                   onClick={togglePlay}
+                  onDurationChange={() => {
+                    const v = videoRef.current;
+                    if (v && Number.isFinite(v.duration) && v.duration > 1) {
+                      setMediaDuration(v.duration);
+                    }
+                  }}
                   onLoadedMetadata={() => {
                     syncMediaSettings();
                     advanceStreamStage("manifest");
                     const v = videoRef.current;
-                    if (v && pendingResolutionRestoreTimeRef.current !== null) {
-                      const restoreT = pendingResolutionRestoreTimeRef.current;
-                      v.currentTime = restoreT;
-                      if (audioRef.current) {
-                        audioRef.current.currentTime = restoreT;
+                    if (v) {
+                      if (Number.isFinite(v.duration) && v.duration > 1) {
+                        setMediaDuration(v.duration);
+                      }
+                      if (pendingResolutionRestoreTimeRef.current !== null) {
+                        const restoreT = pendingResolutionRestoreTimeRef.current;
+                        v.currentTime = restoreT;
+                        if (audioRef.current) {
+                          audioRef.current.currentTime = restoreT;
+                        }
                       }
                     }
                   }}
@@ -2222,13 +2305,57 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                       setIsPlaying(false);
                     }
                   }}
-                  onError={() => {
-                    console.warn("Video stream load error on active stream:", activeStreamUrl);
-                    if (!metadata.preview_stream_url && !metadata.preview_webm_url) {
-                      setStreamError(true);
-                      setIsLoadingStream(false);
-                      setPlayerMode("embed");
+                  onError={(e) => {
+                    if (
+                      !activeStreamUrl ||
+                      !e.currentTarget.getAttribute("src")
+                    ) {
+                      return;
                     }
+                    console.warn("Video stream load error on active stream:", activeStreamUrl);
+                    const v = videoRef.current;
+                    const curT = v && v.currentTime > 0 ? v.currentTime : currentTime;
+
+                    if (errorRecoveryAttemptsRef.current < 4) {
+                      if (
+                        playerMode === "mp4" &&
+                        activeResOption?.webm_url &&
+                        activeResOption.webm_url !== activeStreamUrl
+                      ) {
+                        errorRecoveryAttemptsRef.current += 1;
+                        pendingResolutionRestoreTimeRef.current = curT;
+                        setStreamError(false);
+                        setLoadLabel("Probando formato WebM...");
+                        setIsLoadingStream(true);
+                        setPlayerMode("webm");
+                        return;
+                      }
+
+                      const resList = metadata?.preview_resolutions ?? [];
+                      const curIdx = resList.findIndex(
+                        (r) => r.label === selectedResolution
+                      );
+                      const fallbackRes =
+                        resList.find((r, idx) => idx > curIdx && r.height <= 1080) ||
+                        (curIdx >= 0 && curIdx + 1 < resList.length
+                          ? resList[curIdx + 1]
+                          : null);
+
+                      if (fallbackRes && fallbackRes.label !== selectedResolution) {
+                        errorRecoveryAttemptsRef.current += 1;
+                        pendingResolutionRestoreTimeRef.current = curT;
+                        setStreamError(false);
+                        setLoadLabel(`Bajando a ${fallbackRes.label}...`);
+                        setIsLoadingStream(true);
+                        setPlayerMode("mp4");
+                        setSelectedResolution(fallbackRes.label);
+                        return;
+                      }
+                    }
+
+                    setStreamError(true);
+                    setIsLoadingStream(false);
+                    setPlayerMode("embed");
                   }}
                   className="h-full w-full object-contain cursor-pointer"
                 />
@@ -2318,17 +2445,23 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                   />
                 )}
 
-                {!isPlaying && !isLoadingStream && !showLoadOverlay && !dragMode && (
-                  <button
-                    type="button"
-                    onClick={togglePlay}
-                    className="absolute inset-0 flex items-center justify-center bg-black/30 backdrop-blur-[1px] transition hover:bg-black/40"
-                  >
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600/90 text-white shadow-2xl shadow-indigo-500/40 transition hover:scale-105 active:scale-95">
-                      <Play className="ml-1 h-7 w-7 fill-white" />
-                    </div>
-                  </button>
-                )}
+                <AnimatePresence>
+                  {!isPlaying && !isLoadingStream && !showLoadOverlay && !dragMode && (
+                    <motion.button
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.14 }}
+                      type="button"
+                      onClick={togglePlay}
+                      className="absolute inset-0 flex items-center justify-center bg-black/30 backdrop-blur-[1px] transition hover:bg-black/40"
+                    >
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600/90 text-white shadow-2xl shadow-indigo-500/40 transition hover:scale-105 active:scale-95">
+                        <Play className="ml-1 h-7 w-7 fill-white" />
+                      </div>
+                    </motion.button>
+                  )}
+                </AnimatePresence>
 
                 {dragMode && trimPreview && (
                   <div className="pointer-events-none absolute top-12 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full border border-indigo-400/50 bg-black/80 px-3 py-1 text-[11px] font-semibold text-white shadow-xl backdrop-blur-md">
@@ -2355,12 +2488,31 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
             )}
 
             {/* Video Top HUD Overlay */}
-            <div className="pointer-events-none absolute top-3 left-3 right-3 flex items-center justify-between z-20">
+            <div className="pointer-events-none absolute top-3 left-3 right-3 flex items-center justify-between z-20 opacity-85 hover:opacity-100 transition-opacity duration-200">
               <div className="flex items-center gap-2 rounded-lg bg-black/75 px-2.5 py-1 text-xs text-white backdrop-blur-md border border-white/10 pointer-events-auto max-w-[45%] shrink min-w-0">
                 <span className="truncate font-medium">{metadata.title}</span>
               </div>
 
               <div className="flex items-center gap-1.5 pointer-events-auto shrink-0 flex-wrap justify-end">
+                {playerMode === "embed" &&
+                  streamError &&
+                  (metadata.preview_stream_url || metadata.preview_webm_url) && (
+                    <Tooltip side="bottom" content="Reintentar reproducción nativa con proxy">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleModeSwitch(
+                            metadata.preview_stream_url ? "mp4" : "webm"
+                          )
+                        }
+                        className="flex items-center gap-1 rounded-lg bg-amber-500/20 border border-amber-400/40 px-2 py-0.5 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/30 smooth-btn backdrop-blur-md"
+                      >
+                        <RotateCcw className="h-2.5 w-2.5" />
+                        <span>Reintentar nativo</span>
+                      </button>
+                    </Tooltip>
+                  )}
+
                 {metadata.audio_tracks.length > 1 && onSelectAudioTrack && (
                   <Tooltip side="bottom" content="Seleccionar pista de audio">
                     <select
@@ -2368,10 +2520,14 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                         selectedAudioTrackId || metadata.audio_tracks[0]?.track_id
                       }
                       onChange={(e) => onSelectAudioTrack(e.target.value)}
-                      className="rounded-lg bg-black/80 px-2 py-0.5 text-[10px] text-slate-300 border border-white/10 outline-none backdrop-blur-md"
+                      className="rounded-lg bg-black/80 px-2 py-0.5 text-[10px] text-slate-300 border border-white/10 outline-none backdrop-blur-md cursor-pointer"
                     >
                       {metadata.audio_tracks.map((t) => (
-                        <option key={t.track_id} value={t.track_id}>
+                        <option
+                          key={t.track_id}
+                          value={t.track_id}
+                          className="bg-[#121218] text-white"
+                        >
                           {t.label || t.language || t.track_id}
                         </option>
                       ))}
@@ -2384,7 +2540,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                     <button
                       type="button"
                       disabled={!metadata.preview_stream_url}
-                      onClick={() => setPlayerMode("mp4")}
+                      onClick={() => handleModeSwitch("mp4")}
                       className={`rounded px-2 py-0.5 text-[10px] font-semibold smooth-btn ${
                         playerMode === "mp4"
                           ? "bg-indigo-600 text-white shadow-sm"
@@ -2398,7 +2554,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                     <button
                       type="button"
                       disabled={!metadata.preview_webm_url}
-                      onClick={() => setPlayerMode("webm")}
+                      onClick={() => handleModeSwitch("webm")}
                       className={`rounded px-2 py-0.5 text-[10px] font-semibold smooth-btn ${
                         playerMode === "webm"
                           ? "bg-cyan-600 text-white shadow-sm"
@@ -2411,7 +2567,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                   <Tooltip side="bottom" content="Reproductor embebido (útil si el stream directo falla)">
                     <button
                       type="button"
-                      onClick={() => setPlayerMode("embed")}
+                      onClick={() => handleModeSwitch("embed")}
                       className={`rounded px-2 py-0.5 text-[10px] font-semibold smooth-btn ${
                         playerMode === "embed"
                           ? "bg-rose-600 text-white shadow-sm"
@@ -2813,11 +2969,24 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                 const rect = e.currentTarget.getBoundingClientRect();
                 const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
                 const t = Math.max(0, Math.min(duration, viewStart + ratio * viewDuration));
-                setHoverTime({ time: t, pct: ratio * 100 });
+                pendingHoverRef.current = { time: t, pct: ratio * 100 };
+                if (hoverRafRef.current === null) {
+                  hoverRafRef.current = window.requestAnimationFrame(() => {
+                    hoverRafRef.current = null;
+                    if (pendingHoverRef.current && !dragModeRef.current) {
+                      setHoverTime(pendingHoverRef.current);
+                    }
+                  });
+                }
               }
             }}
             onPointerLeave={() => {
               setIsAltPressed(false);
+              pendingHoverRef.current = null;
+              if (hoverRafRef.current !== null) {
+                window.cancelAnimationFrame(hoverRafRef.current);
+                hoverRafRef.current = null;
+              }
               if (!dragModeRef.current) {
                 setHoverTime(null);
               }
@@ -3003,7 +3172,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
 
                   {/* Clip Title & Duration */}
                   <div className="flex items-center gap-1 min-w-0 overflow-hidden px-1 pointer-events-none">
-                    <span className="font-mono text-[9px] font-bold text-white bg-black/55 px-1 py-0.2 rounded shrink-0 border border-white/20 tabular-nums">
+                    <span className="font-mono text-[9px] font-bold text-white bg-black/55 px-1 py-0.5 rounded shrink-0 border border-white/20 tabular-nums">
                       #{displayNum}
                     </span>
                     <span className="truncate text-[9px] font-bold tracking-tight opacity-95">
@@ -3339,11 +3508,11 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
               onChange={(e) => handleRateChange(parseFloat(e.target.value))}
               className="h-8 rounded-lg border border-white/10 bg-[#09090B] px-1.5 font-mono text-[11px] text-slate-300 outline-none hover:border-white/20 disabled:opacity-40 cursor-pointer"
             >
-              <option value={0.5}>0.5x</option>
-              <option value={1}>1.0x</option>
-              <option value={1.25}>1.25x</option>
-              <option value={1.5}>1.5x</option>
-              <option value={2}>2.0x</option>
+              <option value={0.5} className="bg-[#121218] text-white">0.5x</option>
+              <option value={1} className="bg-[#121218] text-white">1.0x</option>
+              <option value={1.25} className="bg-[#121218] text-white">1.25x</option>
+              <option value={1.5} className="bg-[#121218] text-white">1.5x</option>
+              <option value={2} className="bg-[#121218] text-white">2.0x</option>
             </select>
           </Tooltip>
 
@@ -3356,6 +3525,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
                   value={selectedResolution}
                   onChange={(e) => {
                     if (playerMode === "embed") {
+                      setStreamError(false);
                       setPlayerMode("mp4");
                     }
                     handleResolutionChange(e.target.value);
@@ -3386,7 +3556,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
             >
               <MapPin className="h-3.5 w-3.5 text-indigo-400" />
               <span>Inicio</span>
-              <span className="rounded bg-indigo-500/25 px-1 py-0.2 font-mono text-[10px] text-indigo-300">
+              <span className="rounded bg-indigo-500/25 px-1 py-0.5 font-mono text-[10px] text-indigo-300">
                 I
               </span>
             </motion.button>
@@ -3403,7 +3573,7 @@ export const VisorPanel: React.FC<VisorPanelProps> = ({
             >
               <Flag className="h-3.5 w-3.5 text-indigo-400" />
               <span>Fin</span>
-              <span className="rounded bg-indigo-500/25 px-1 py-0.2 font-mono text-[10px] text-indigo-300">
+              <span className="rounded bg-indigo-500/25 px-1 py-0.5 font-mono text-[10px] text-indigo-300">
                 O
               </span>
             </motion.button>

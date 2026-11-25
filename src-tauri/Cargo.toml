@@ -1,6 +1,6 @@
 [package]
 name = "clipgen-studio"
-version = "0.2.0"
+version = "0.2.1"
 description = "ClipGen Studio — YouTube Downloader & Multi-Clip Editor powered by Rust, Tauri, yt-dlp and FFmpeg"
 authors = ["Javier Medina"]
 edition = "2021"
